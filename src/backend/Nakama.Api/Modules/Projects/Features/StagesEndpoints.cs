@@ -1,0 +1,58 @@
+using System.Data;
+using Microsoft.EntityFrameworkCore;
+using Nakama.Api.BuildingBlocks.Persistence;
+using Nakama.Api.BuildingBlocks.Time;
+using Nakama.Api.Modules.Projects.Domain;
+namespace Nakama.Api.Modules.Projects.Features;
+
+public sealed record CreateStageRequest(string? Name, string? Description);
+public sealed record UpdateStageRequest(string? Name, string? Description, long? Version);
+public sealed record StageVersionRequest(long? Version);
+public sealed record StageOrderItem(Guid StageId, int Position, long Version);
+public sealed record ReorderStagesRequest(IReadOnlyList<StageOrderItem>? Stages);
+public sealed record AddStageMemberRequest(Guid? UserId, string? Role);
+public sealed record StageResponse(Guid Id, Guid ProjectId, string Name, string? Description, int Position, bool IsActive, long Version);
+public sealed record StageMemberResponse(Guid UserId, string FullName, string Email, string Role, DateTimeOffset AssignedAt);
+
+internal static class StagesEndpoints
+{
+    public static void MapEndpoints(RouteGroupBuilder g)
+    {
+        g.MapPost("/{projectId:guid}/stages", Create); g.MapGet("/{projectId:guid}/stages", List);
+        g.MapPut("/{projectId:guid}/stages/{stageId:guid}", Update); g.MapPost("/{projectId:guid}/stages/{stageId:guid}/activate", (Guid projectId, Guid stageId, StageVersionRequest r, NakamaDbContext d, IClock c, CancellationToken t) => Toggle(projectId, stageId, r, true, d, c, t)); g.MapPost("/{projectId:guid}/stages/{stageId:guid}/deactivate", (Guid projectId, Guid stageId, StageVersionRequest r, NakamaDbContext d, IClock c, CancellationToken t) => Toggle(projectId, stageId, r, false, d, c, t));
+        g.MapPut("/{projectId:guid}/stages/order", Reorder); g.MapPost("/{projectId:guid}/stages/{stageId:guid}/members", AddMember); g.MapGet("/{projectId:guid}/stages/{stageId:guid}/members", ListMembers); g.MapDelete("/{projectId:guid}/stages/{stageId:guid}/members/{userId:guid}", RemoveMember);
+    }
+    private static IResult P(string type, string title, int status, string? detail = null) => Results.Problem(type: $"https://nakama/errors/{type}", title: title, detail: detail, statusCode: status);
+    private static async Task<Project?> EditableProject(Guid id, NakamaDbContext d, CancellationToken t) => await d.Projects.SingleOrDefaultAsync(x => x.Id == id, t);
+    private static IResult? CheckProject(Project? p, Guid id) => p is null ? P("project-not-found", "No existe el proyecto.", 404) : p.Status is ProjectStatus.Completed or ProjectStatus.Cancelled ? P("project-closed-for-structure-changes", "El proyecto está cerrado para cambios estructurales.", 409) : null;
+    private static StageResponse R(Stage s) => new(s.Id, s.ProjectId, s.Name, s.Description, s.Position, s.IsActive, s.Version);
+    private static async Task<IResult> Create(Guid projectId, CreateStageRequest r, NakamaDbContext d, IClock c, CancellationToken t)
+    {
+        var p = await EditableProject(projectId, d, t); if (CheckProject(p, projectId) is { } e) return e;
+        await using var tx = await d.Database.BeginTransactionAsync(IsolationLevel.Serializable, t);
+        try { var pos = (await d.Stages.Where(x => x.ProjectId == projectId).MaxAsync(x => (int?)x.Position, t) ?? 0) + 1; var s = Stage.Create(projectId, r.Name ?? "", r.Description, pos, c); d.Stages.Add(s); await d.SaveChangesAsync(t); await tx.CommitAsync(t); return Results.Created($"/api/projects/{projectId}/stages/{s.Id}", R(s)); }
+        catch (ArgumentException x) { return P("stage-validation", "Los datos de la etapa no son válidos.", 400, x.Message); }
+        catch (DbUpdateException) { return P("stage-name-already-exists", "Ya existe una etapa con ese nombre o posición.", 409); }
+    }
+    private static async Task<IResult> List(Guid projectId, NakamaDbContext d, CancellationToken t)
+    {
+        if (!await d.Projects.AsNoTracking().AnyAsync(x => x.Id == projectId, t)) return P("project-not-found", "No existe el proyecto.", 404);
+        var list = await d.Stages.AsNoTracking().Where(x => x.ProjectId == projectId).OrderBy(x => x.Position).Select(x => new { x.Id,x.ProjectId,x.Name,x.Description,x.Position,x.IsActive,x.Version, Count = d.StageMembers.Count(m => m.StageId == x.Id) }).ToListAsync(t);
+        return Results.Ok(list.Select(x => new { x.Id,x.ProjectId,x.Name,x.Description,x.Position,x.IsActive,x.Version, memberCount=x.Count }));
+    }
+    private static async Task<IResult> Update(Guid projectId, Guid stageId, UpdateStageRequest r, NakamaDbContext d, IClock c, CancellationToken t)
+    {
+        var p=await EditableProject(projectId,d,t); if(CheckProject(p,projectId) is { } e)return e; var s=await d.Stages.SingleOrDefaultAsync(x=>x.Id==stageId&&x.ProjectId==projectId,t); if(s is null)return P("stage-not-found","No existe la etapa.",404); if(r.Version is not > 0 || r.Version!=s.Version)return P("stage-version-conflict","La etapa fue modificada por otro usuario.",409);
+        try{s.UpdateDetails(r.Name??"",r.Description,c);d.Entry(s).Property(x=>x.Version).OriginalValue=r.Version.Value;await d.SaveChangesAsync(t);return Results.NoContent();}catch(ArgumentException x){return P("stage-validation","Los datos de la etapa no son válidos.",400,x.Message);}catch(DbUpdateConcurrencyException){return P("stage-version-conflict","La etapa fue modificada por otro usuario.",409);}catch(DbUpdateException){return P("stage-name-already-exists","Ya existe una etapa con ese nombre.",409);}
+    }
+    private static async Task<IResult> Toggle(Guid projectId,Guid stageId,StageVersionRequest r,bool active,NakamaDbContext d,IClock c,CancellationToken t)
+    { var p=await EditableProject(projectId,d,t);if(CheckProject(p,projectId) is { } e)return e;var s=await d.Stages.SingleOrDefaultAsync(x=>x.Id==stageId&&x.ProjectId==projectId,t);if(s is null)return P("stage-not-found","No existe la etapa.",404);if(r.Version is not > 0||r.Version!=s.Version)return P("stage-version-conflict","La etapa fue modificada por otro usuario.",409);try{if(active)s.Activate(c);else s.Deactivate(c);d.Entry(s).Property(x=>x.Version).OriginalValue=r.Version.Value;await d.SaveChangesAsync(t);return Results.NoContent();}catch(InvalidOperationException x){return P("stage-invalid-state","La etapa ya está en ese estado.",409,x.Message);}catch(DbUpdateConcurrencyException){return P("stage-version-conflict","La etapa fue modificada por otro usuario.",409);} }
+    private static async Task<IResult> Reorder(Guid projectId,ReorderStagesRequest r,NakamaDbContext d,IClock c,CancellationToken t)
+    { var p=await EditableProject(projectId,d,t);if(CheckProject(p,projectId) is { } e)return e;var items=r.Stages;if(items is null)return P("stage-order-invalid","El orden es obligatorio.",400);var stages=await d.Stages.AsNoTracking().Where(x=>x.ProjectId==projectId).OrderBy(x=>x.Position).ToListAsync(t);if(items.Count!=stages.Count||items.Select(x=>x.StageId).Distinct().Count()!=items.Count||items.Select(x=>x.Position).OrderBy(x=>x).SequenceEqual(Enumerable.Range(1,items.Count))==false)return P("stage-order-invalid","El orden debe contener todas las etapas con posiciones contiguas.",400);if(items.Any(i=>stages.All(s=>s.Id!=i.StageId)))return P("stage-order-invalid","Hay etapas de otro proyecto.",400);if(items.Any(i=>stages.Single(s=>s.Id==i.StageId).Version!=i.Version))return P("stage-version-conflict","Una etapa fue modificada por otro usuario.",409);await using var tx=await d.Database.BeginTransactionAsync(t);try{await d.Stages.Where(x=>x.ProjectId==projectId).ExecuteUpdateAsync(x=>x.SetProperty(s=>s.Position,s=>s.Position+stages.Count),t);foreach(var i in items){var changed=await d.Stages.Where(s=>s.Id==i.StageId&&s.Version==i.Version).ExecuteUpdateAsync(x=>x.SetProperty(s=>s.Position,i.Position).SetProperty(s=>s.Version,s=>s.Version+1).SetProperty(s=>s.UpdatedAt,c.UtcNow),t);if(changed!=1){await tx.RollbackAsync(t);return P("stage-version-conflict","Una etapa fue modificada por otro usuario.",409);}}await tx.CommitAsync(t);return Results.NoContent();}catch(DbUpdateConcurrencyException){return P("stage-version-conflict","Una etapa fue modificada por otro usuario.",409);} }
+    private static async Task<IResult> AddMember(Guid projectId,Guid stageId,AddStageMemberRequest r,NakamaDbContext d,IClock c,CancellationToken t)
+    { var p=await EditableProject(projectId,d,t);if(CheckProject(p,projectId) is { } e)return e;var s=await d.Stages.SingleOrDefaultAsync(x=>x.Id==stageId&&x.ProjectId==projectId,t);if(s is null)return P("stage-not-found","No existe la etapa.",404);if(r.UserId is not { } uid||uid==Guid.Empty)return P("stage-validation","UserId es obligatorio.",400);var u=await d.Users.SingleOrDefaultAsync(x=>x.Id==uid,t);if(u is null)return P("user-not-found","No existe el usuario.",404);if(!u.IsActive)return P("stage-user-inactive","El usuario está inactivo.",409);if(!await d.ProjectMembers.AnyAsync(x=>x.ProjectId==projectId&&x.UserId==uid,t))return P("stage-user-not-project-member","El usuario no pertenece al proyecto.",409);if(!Enum.TryParse(r.Role,false,out StageRole role)||!Enum.IsDefined(role))return P("stage-validation","Role debe ser Responsible o Member.",400);if(await d.StageMembers.AnyAsync(x=>x.StageId==stageId&&x.UserId==uid,t))return P("stage-member-already-exists","El usuario ya pertenece a la etapa.",409);var m=StageMember.Create(stageId,uid,role,c);d.StageMembers.Add(m);try{await d.SaveChangesAsync(t);return Results.Created($"/api/projects/{projectId}/stages/{stageId}/members/{uid}",new StageMemberResponse(uid,u.FullName,u.Email,role.ToString(),m.AssignedAt));}catch(DbUpdateException){return P("stage-member-already-exists","El usuario ya pertenece a la etapa.",409);} }
+    private static async Task<IResult> ListMembers(Guid projectId,Guid stageId,NakamaDbContext d,CancellationToken t)
+    { if(!await d.Stages.AsNoTracking().AnyAsync(x=>x.Id==stageId&&x.ProjectId==projectId,t))return P("stage-not-found","No existe la etapa.",404);var x=await(from m in d.StageMembers.AsNoTracking() join u in d.Users.AsNoTracking() on m.UserId equals u.Id where m.StageId==stageId select new StageMemberResponse(u.Id,u.FullName,u.Email,m.Role.ToString(),m.AssignedAt)).ToListAsync(t);return Results.Ok(x); }
+    private static async Task<IResult> RemoveMember(Guid projectId,Guid stageId,Guid userId,NakamaDbContext d,CancellationToken t)
+    { if(!await d.Stages.AsNoTracking().AnyAsync(x=>x.Id==stageId&&x.ProjectId==projectId,t))return P("stage-not-found","No existe la etapa.",404);var m=await d.StageMembers.SingleOrDefaultAsync(x=>x.StageId==stageId&&x.UserId==userId,t);if(m is null)return P("stage-member-not-found","El usuario no pertenece a la etapa.",404);d.StageMembers.Remove(m);await d.SaveChangesAsync(t);return Results.NoContent(); }
+}

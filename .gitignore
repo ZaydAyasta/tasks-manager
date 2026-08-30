@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+.idea/
+TestResults/
+coverage/
+coverage-reports/
+*.coverage
+*.coveragexml
+*.trx
+.testagent/
+.env
+.env.*
+appsettings.Development.local.json
+appsettings.*.local.json

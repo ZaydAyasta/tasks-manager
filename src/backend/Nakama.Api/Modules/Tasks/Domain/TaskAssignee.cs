@@ -1,0 +1,3 @@
+using Nakama.Api.BuildingBlocks.Time;
+namespace Nakama.Api.Modules.Tasks.Domain;
+public sealed class TaskAssignee { private TaskAssignee(){} private TaskAssignee(Guid taskId,Guid userId,DateTimeOffset at){Id=Guid.NewGuid();TaskId=taskId;UserId=userId;AssignedAt=at;} public Guid Id{get;private set;} public Guid TaskId{get;private set;} public Guid UserId{get;private set;} public DateTimeOffset AssignedAt{get;private set;} public static TaskAssignee Create(Guid taskId,Guid userId,IClock c){ArgumentNullException.ThrowIfNull(c);if(taskId==Guid.Empty||userId==Guid.Empty)throw new ArgumentException("Task and user are required.");return new(taskId,userId,c.UtcNow);} }
