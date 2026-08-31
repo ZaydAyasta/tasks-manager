@@ -25,6 +25,8 @@ La migración `AddTasks` incorpora el núcleo de tareas y asignados. `createdByU
 
 La migración `AddTaskBlockers` incorpora blockers con historial, categorías fijas y restauración automática del estado previo al resolver el último bloqueo activo. Los IDs de reportante y resolvedor son temporales hasta implementar autenticación.
 
+La migración `AddTaskDependencies` incorpora prerequisitos estructurales entre tareas. Una dependencia solo queda satisfecha cuando su prerrequisito está `Completed`; los blockers siguen siendo un mecanismo operativo independiente.
+
 La migración `AddSubtasks` incorpora checklist ordenado por tarea. Las subtareas se eliminan físicamente, se protegen con `taskVersion` y son de solo lectura durante `InReview`, `Completed` y `Cancelled`.
 
 `GET /health` siempre comprueba que la aplicación está disponible. Cuando se configura la cadena, también comprueba PostgreSQL. En Development, el documento OpenAPI queda disponible en `/openapi/v1.json`.

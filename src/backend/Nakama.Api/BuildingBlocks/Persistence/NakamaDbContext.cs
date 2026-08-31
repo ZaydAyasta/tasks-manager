@@ -16,6 +16,7 @@ public sealed class NakamaDbContext(DbContextOptions<NakamaDbContext> options) :
     public DbSet<TaskAssignee> TaskAssignees => Set<TaskAssignee>();
     public DbSet<TaskBlocker> TaskBlockers => Set<TaskBlocker>();
     public DbSet<Subtask> Subtasks => Set<Subtask>();
+    public DbSet<TaskDependency> TaskDependencies => Set<TaskDependency>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

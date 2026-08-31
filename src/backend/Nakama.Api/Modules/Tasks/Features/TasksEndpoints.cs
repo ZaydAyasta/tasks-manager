@@ -5,21 +5,200 @@ using Nakama.Api.BuildingBlocks.Time;
 using Nakama.Api.Modules.Projects.Domain;
 using Nakama.Api.Modules.Tasks.Domain;
 using DomainTaskStatus = Nakama.Api.Modules.Tasks.Domain.TaskStatus;
+
 namespace Nakama.Api.Modules.Tasks.Features;
-public sealed record CreateTaskRequest(Guid? StageId,string? Title,string? Description,string? Priority,DateTimeOffset? DueDate,Guid? CreatedByUserId,IReadOnlyList<Guid>? AssigneeIds);
-public sealed record UpdateTaskRequest(string? Title,string? Description,string? Priority,DateTimeOffset? DueDate,long? Version); public sealed record MoveTaskRequest(Guid? StageId,long? Version); public sealed record VersionRequest(long? Version); public sealed record AddAssigneeRequest(Guid? UserId,long? Version);
-public sealed record AssigneeResponse(Guid Id,string FullName,string Email); public sealed record SubtaskProgressResponse(int Completed,int Total); public sealed record TaskResponse(Guid Id,Guid ProjectId,Guid StageId,string Title,string? Description,string Status,string Priority,DateTimeOffset? DueDate,IReadOnlyList<AssigneeResponse> Assignees,long Version,DateTimeOffset CreatedAt,DateTimeOffset UpdatedAt,DateTimeOffset? CompletedAt,SubtaskProgressResponse SubtaskProgress);
+
+public sealed record CreateTaskRequest(Guid? StageId, string? Title, string? Description, string? Priority, DateTimeOffset? DueDate, Guid? CreatedByUserId, IReadOnlyList<Guid>? AssigneeIds);
+public sealed record UpdateTaskRequest(string? Title, string? Description, string? Priority, DateTimeOffset? DueDate, long? Version);
+public sealed record MoveTaskRequest(Guid? StageId, long? Version);
+public sealed record VersionRequest(long? Version);
+public sealed record AddAssigneeRequest(Guid? UserId, long? Version);
+public sealed record AssigneeResponse(Guid Id, string FullName, string Email);
+public sealed record SubtaskProgressResponse(int Completed, int Total);
+public sealed record DependencyProgressResponse(int Satisfied, int Total);
+public sealed record TaskResponse(Guid Id, Guid ProjectId, Guid StageId, string Title, string? Description, string Status, string Priority, DateTimeOffset? DueDate, IReadOnlyList<AssigneeResponse> Assignees, long Version, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? CompletedAt, SubtaskProgressResponse SubtaskProgress, DependencyProgressResponse DependencyProgress, bool DependenciesSatisfied, int PendingDependencyCount);
+
 internal static class TasksEndpoints
 {
- public static void MapEndpoints(IEndpointRouteBuilder a){var p=a.MapGroup("/api/projects").WithTags("Tasks");p.MapPost("/{projectId:guid}/tasks",Create);p.MapGet("/{projectId:guid}/tasks",List);var t=a.MapGroup("/api/tasks").WithTags("Tasks");t.MapGet("/{id:guid}",Get);t.MapPut("/{id:guid}",Update);t.MapPut("/{id:guid}/stage",Move);t.MapPost("/{id:guid}/assignees",Add);t.MapDelete("/{id:guid}/assignees/{userId:guid}",Remove);t.MapPost("/{id:guid}/start",(Guid id,VersionRequest r,NakamaDbContext d,IClock c,CancellationToken x)=>Flow(id,r,d,c,x,1));t.MapPost("/{id:guid}/submit-review",(Guid id,VersionRequest r,NakamaDbContext d,IClock c,CancellationToken x)=>Flow(id,r,d,c,x,2));t.MapPost("/{id:guid}/request-changes",(Guid id,VersionRequest r,NakamaDbContext d,IClock c,CancellationToken x)=>Flow(id,r,d,c,x,3));t.MapPost("/{id:guid}/complete",(Guid id,VersionRequest r,NakamaDbContext d,IClock c,CancellationToken x)=>Flow(id,r,d,c,x,4));t.MapPost("/{id:guid}/cancel",(Guid id,VersionRequest r,NakamaDbContext d,IClock c,CancellationToken x)=>Flow(id,r,d,c,x,5));}
- static IResult P(string type,string title,int code,string? detail=null)=>Results.Problem(type:$"https://nakama/errors/{type}",title:title,detail:detail,statusCode:code); static bool Closed(Project p)=>p.Status is ProjectStatus.Completed or ProjectStatus.Cancelled;
- static async Task<IResult> Create(Guid projectId,CreateTaskRequest r,NakamaDbContext d,IClock c,CancellationToken x){var p=await d.Projects.SingleOrDefaultAsync(z=>z.Id==projectId,x);if(p is null)return P("project-not-found","No existe el proyecto.",404);if(Closed(p))return P("task-project-closed","El proyecto está cerrado.",409);if(r.StageId is not { } sid||r.CreatedByUserId is not { } cid)return P("task-validation","StageId y CreatedByUserId son obligatorios.",400);var s=await d.Stages.SingleOrDefaultAsync(z=>z.Id==sid,x);if(s is null)return P("stage-not-found","No existe la etapa.",404);if(s.ProjectId!=projectId)return P("task-stage-project-mismatch","La etapa no pertenece al proyecto.",409);if(!s.IsActive)return P("task-stage-inactive","La etapa está inactiva.",409);var u=await d.Users.SingleOrDefaultAsync(z=>z.Id==cid,x);if(u is null)return P("user-not-found","No existe el usuario.",404);if(!u.IsActive)return P("task-creator-inactive","El creador está inactivo.",409);if(!await d.ProjectMembers.AnyAsync(z=>z.ProjectId==projectId&&z.UserId==cid,x))return P("task-creator-not-project-member","El creador no pertenece al proyecto.",409);if(!Enum.TryParse(r.Priority,false,out TaskPriority pr)||!Enum.IsDefined(pr))return P("task-validation","Priority es obligatoria y válida.",400);var ids=r.AssigneeIds??[];if(ids.Distinct().Count()!=ids.Count)return P("task-validation","AssigneeIds no puede contener duplicados.",400);var users=await d.Users.Where(z=>ids.Contains(z.Id)).ToListAsync(x);if(users.Count!=ids.Count)return P("task-assignee-not-found","No existe un responsable.",404);if(users.Any(z=>!z.IsActive))return P("task-assignee-inactive","Un responsable está inactivo.",409);if(await d.ProjectMembers.Where(z=>z.ProjectId==projectId&&ids.Contains(z.UserId)).CountAsync(x)!=ids.Count)return P("task-assignee-not-project-member","Un responsable no pertenece al proyecto.",409);try{var task=WorkTask.Create(projectId,sid,r.Title??"",r.Description,pr,r.DueDate,cid,c);d.Tasks.Add(task);d.TaskAssignees.AddRange(ids.Select(id=>TaskAssignee.Create(task.Id,id,c)));await d.SaveChangesAsync(x);return Results.Created($"/api/tasks/{task.Id}",await Response(task,d,x));}catch(ArgumentException e){return P("task-validation","Los datos no son válidos.",400,e.Message);}}
- static async Task<IResult> Get(Guid id,NakamaDbContext d,CancellationToken x){var t=await d.Tasks.AsNoTracking().SingleOrDefaultAsync(z=>z.Id==id,x);return t is null?P("task-not-found","No existe la tarea.",404):Results.Ok(await Response(t,d,x));}
- static async Task<IResult> List(Guid projectId,Guid? stageId,string? status,string? priority,Guid? assigneeId,NakamaDbContext d,CancellationToken x){if(!await d.Projects.AsNoTracking().AnyAsync(z=>z.Id==projectId,x))return P("project-not-found","No existe el proyecto.",404);IQueryable<WorkTask> q=d.Tasks.AsNoTracking().Where(z=>z.ProjectId==projectId);if(stageId is { } s)q=q.Where(z=>z.StageId==s);DomainTaskStatus st=default;TaskPriority pr=default;if(status is not null&&(!Enum.TryParse(status,false,out st)||!Enum.IsDefined(st)))return P("task-validation","Status inválido.",400);if(status is not null)q=q.Where(z=>z.Status==st);if(priority is not null&&(!Enum.TryParse(priority,false,out pr)||!Enum.IsDefined(pr)))return P("task-validation","Priority inválida.",400);if(priority is not null)q=q.Where(z=>z.Priority==pr);if(assigneeId is { } a)q=q.Where(z=>d.TaskAssignees.Any(m=>m.TaskId==z.Id&&m.UserId==a));var list=await q.OrderBy(z=>z.DueDate==null).ThenBy(z=>z.DueDate).ThenByDescending(z=>z.CreatedAt).ToListAsync(x);return Results.Ok(await Responses(list,d,x));}
- static async Task<IResult> Update(Guid id,UpdateTaskRequest r,NakamaDbContext d,IClock c,CancellationToken x){var t=await d.Tasks.SingleOrDefaultAsync(z=>z.Id==id,x);if(t is null)return P("task-not-found","No existe la tarea.",404);if(Closed(await d.Projects.SingleAsync(z=>z.Id==t.ProjectId,x)))return P("task-project-closed","El proyecto está cerrado.",409);if(r.Version is not >0||r.Version!=t.Version)return P("task-version-conflict","La tarea fue modificada.",409);if(!Enum.TryParse(r.Priority,false,out TaskPriority pr)||!Enum.IsDefined(pr))return P("task-validation","Priority inválida.",400);try{t.UpdateDetails(r.Title??"",r.Description,pr,r.DueDate,c);d.Entry(t).Property(z=>z.Version).OriginalValue=r.Version.Value;await d.SaveChangesAsync(x);return Results.NoContent();}catch(ArgumentException e){return P("task-validation","Datos inválidos.",400,e.Message);}catch(DbUpdateConcurrencyException){return P("task-version-conflict","La tarea fue modificada.",409);}}
- static async Task<IResult> Move(Guid id,MoveTaskRequest r,NakamaDbContext d,IClock c,CancellationToken x){var t=await d.Tasks.SingleOrDefaultAsync(z=>z.Id==id,x);if(t is null)return P("task-not-found","No existe la tarea.",404);if(Closed(await d.Projects.SingleAsync(z=>z.Id==t.ProjectId,x)))return P("task-project-closed","El proyecto está cerrado.",409);if(r.Version is not>0||r.Version!=t.Version)return P("task-version-conflict","La tarea fue modificada.",409);var s=await d.Stages.SingleOrDefaultAsync(z=>z.Id==r.StageId,x);if(s is null)return P("stage-not-found","No existe la etapa.",404);if(s.ProjectId!=t.ProjectId)return P("task-stage-project-mismatch","La etapa no pertenece al proyecto.",409);if(!s.IsActive)return P("task-stage-inactive","La etapa está inactiva.",409);t.MoveToStage(s.Id,c);d.Entry(t).Property(z=>z.Version).OriginalValue=r.Version.Value;try{await d.SaveChangesAsync(x);return Results.NoContent();}catch(DbUpdateConcurrencyException){return P("task-version-conflict","La tarea fue modificada.",409);}}
- static async Task<IResult> Add(Guid id,AddAssigneeRequest r,NakamaDbContext d,IClock c,CancellationToken x){var t=await d.Tasks.SingleOrDefaultAsync(z=>z.Id==id,x);if(t is null)return P("task-not-found","No existe la tarea.",404);if(Closed(await d.Projects.SingleAsync(z=>z.Id==t.ProjectId,x)))return P("task-project-closed","El proyecto está cerrado.",409);if(r.Version is not>0||r.Version!=t.Version)return P("task-version-conflict","La tarea fue modificada.",409);if(r.UserId is not { } u)return P("task-validation","UserId es obligatorio.",400);var user=await d.Users.SingleOrDefaultAsync(z=>z.Id==u,x);if(user is null)return P("user-not-found","No existe el usuario.",404);if(!user.IsActive)return P("task-assignee-inactive","El usuario está inactivo.",409);if(!await d.ProjectMembers.AnyAsync(z=>z.ProjectId==t.ProjectId&&z.UserId==u,x))return P("task-assignee-not-project-member","El usuario no pertenece al proyecto.",409);if(await d.TaskAssignees.AnyAsync(z=>z.TaskId==id&&z.UserId==u,x))return P("task-assignee-already-exists","El usuario ya está asignado.",409);d.TaskAssignees.Add(TaskAssignee.Create(id,u,c));t.ChangeAssignments(c);d.Entry(t).Property(z=>z.Version).OriginalValue=r.Version.Value;try{await d.SaveChangesAsync(x);return Results.Created($"/api/tasks/{id}/assignees/{u}",new AssigneeResponse(u,user.FullName,user.Email));}catch(DbUpdateConcurrencyException){return P("task-version-conflict","La tarea fue modificada.",409);}}
- static async Task<IResult> Remove(Guid id,Guid userId,[FromBody] VersionRequest r,NakamaDbContext d,IClock c,CancellationToken x){var t=await d.Tasks.SingleOrDefaultAsync(z=>z.Id==id,x);if(t is null)return P("task-not-found","No existe la tarea.",404);if(Closed(await d.Projects.SingleAsync(z=>z.Id==t.ProjectId,x)))return P("task-project-closed","El proyecto está cerrado.",409);if(r.Version is not>0||r.Version!=t.Version)return P("task-version-conflict","La tarea fue modificada.",409);var a=await d.TaskAssignees.SingleOrDefaultAsync(z=>z.TaskId==id&&z.UserId==userId,x);if(a is null)return P("task-assignee-not-found","El usuario no está asignado.",404);d.TaskAssignees.Remove(a);t.ChangeAssignments(c);d.Entry(t).Property(z=>z.Version).OriginalValue=r.Version.Value;try{await d.SaveChangesAsync(x);return Results.NoContent();}catch(DbUpdateConcurrencyException){return P("task-version-conflict","La tarea fue modificada.",409);}}
- static async Task<IResult> Flow(Guid id,VersionRequest r,NakamaDbContext d,IClock c,CancellationToken x,int op){var t=await d.Tasks.SingleOrDefaultAsync(z=>z.Id==id,x);if(t is null)return P("task-not-found","No existe la tarea.",404);if(Closed(await d.Projects.SingleAsync(z=>z.Id==t.ProjectId,x)))return P("task-project-closed","El proyecto está cerrado.",409);if(r.Version is not>0||r.Version!=t.Version)return P("task-version-conflict","La tarea fue modificada.",409);try{if(op==1)t.Start(c);if(op==2)t.SubmitForReview(c);if(op==3)t.RequestChanges(c);if(op==4)t.Complete(c);if(op==5)t.Cancel(c);d.Entry(t).Property(z=>z.Version).OriginalValue=r.Version.Value;await d.SaveChangesAsync(x);return Results.NoContent();}catch(InvalidOperationException e){return P("task-invalid-status-transition","La transición no es válida.",409,e.Message);}catch(DbUpdateConcurrencyException){return P("task-version-conflict","La tarea fue modificada.",409);}}
- static async Task<IReadOnlyList<TaskResponse>> Responses(IReadOnlyList<WorkTask> ts,NakamaDbContext d,CancellationToken x){var ids=ts.Select(t=>t.Id).ToArray();var aa=await(from m in d.TaskAssignees.AsNoTracking() join u in d.Users.AsNoTracking() on m.UserId equals u.Id where ids.Contains(m.TaskId) select new{m.TaskId,A=new AssigneeResponse(u.Id,u.FullName,u.Email)}).ToListAsync(x);var pp=await d.Subtasks.Where(s=>ids.Contains(s.TaskId)).GroupBy(s=>s.TaskId).Select(g=>new{g.Key,C=g.Count(s=>s.IsCompleted),T=g.Count()}).ToDictionaryAsync(z=>z.Key,x);return ts.Select(t=>new TaskResponse(t.Id,t.ProjectId,t.StageId,t.Title,t.Description,t.Status.ToString(),t.Priority.ToString(),t.DueDate,aa.Where(a=>a.TaskId==t.Id).Select(a=>a.A).ToList(),t.Version,t.CreatedAt,t.UpdatedAt,t.CompletedAt,pp.TryGetValue(t.Id,out var p)?new(p.C,p.T):new(0,0))).ToList();} static async Task<TaskResponse> Response(WorkTask t,NakamaDbContext d,CancellationToken x)=>(await Responses([t],d,x))[0];
+    public static void MapEndpoints(IEndpointRouteBuilder app)
+    {
+        var projects = app.MapGroup("/api/projects").WithTags("Tasks");
+        projects.MapPost("/{projectId:guid}/tasks", Create);
+        projects.MapGet("/{projectId:guid}/tasks", List);
+        var tasks = app.MapGroup("/api/tasks").WithTags("Tasks");
+        tasks.MapGet("/{id:guid}", Get);
+        tasks.MapPut("/{id:guid}", Update);
+        tasks.MapPut("/{id:guid}/stage", Move);
+        tasks.MapPost("/{id:guid}/assignees", Add);
+        tasks.MapDelete("/{id:guid}/assignees/{userId:guid}", Remove);
+        tasks.MapPost("/{id:guid}/start", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, CancellationToken ct) => Flow(id, request, db, clock, ct, 1));
+        tasks.MapPost("/{id:guid}/submit-review", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, CancellationToken ct) => Flow(id, request, db, clock, ct, 2));
+        tasks.MapPost("/{id:guid}/request-changes", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, CancellationToken ct) => Flow(id, request, db, clock, ct, 3));
+        tasks.MapPost("/{id:guid}/complete", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, CancellationToken ct) => Flow(id, request, db, clock, ct, 4));
+        tasks.MapPost("/{id:guid}/cancel", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, CancellationToken ct) => Flow(id, request, db, clock, ct, 5));
+    }
+
+    private static IResult Problem(string type, string title, int status, string? detail = null) => Results.Problem(type: $"https://nakama/errors/{type}", title: title, detail: detail, statusCode: status);
+    private static bool IsClosed(Project project) => project.Status is ProjectStatus.Completed or ProjectStatus.Cancelled;
+
+    private static async Task<IResult> Create(Guid projectId, CreateTaskRequest request, NakamaDbContext db, IClock clock, CancellationToken ct)
+    {
+        var project = await db.Projects.SingleOrDefaultAsync(x => x.Id == projectId, ct);
+        if (project is null) return Problem("project-not-found", "No existe el proyecto.", 404);
+        if (IsClosed(project)) return Problem("task-project-closed", "El proyecto está cerrado.", 409);
+        if (request.StageId is not { } stageId || request.CreatedByUserId is not { } creatorId) return Problem("task-validation", "StageId y CreatedByUserId son obligatorios.", 400);
+        var stage = await db.Stages.SingleOrDefaultAsync(x => x.Id == stageId, ct);
+        if (stage is null) return Problem("stage-not-found", "No existe la etapa.", 404);
+        if (stage.ProjectId != projectId) return Problem("task-stage-project-mismatch", "La etapa no pertenece al proyecto.", 409);
+        if (!stage.IsActive) return Problem("task-stage-inactive", "La etapa está inactiva.", 409);
+        var creator = await db.Users.SingleOrDefaultAsync(x => x.Id == creatorId, ct);
+        if (creator is null) return Problem("user-not-found", "No existe el usuario.", 404);
+        if (!creator.IsActive) return Problem("task-creator-inactive", "El creador está inactivo.", 409);
+        if (!await db.ProjectMembers.AnyAsync(x => x.ProjectId == projectId && x.UserId == creatorId, ct)) return Problem("task-creator-not-project-member", "El creador no pertenece al proyecto.", 409);
+        if (!Enum.TryParse(request.Priority, false, out TaskPriority priority) || !Enum.IsDefined(priority)) return Problem("task-validation", "Priority es obligatoria y válida.", 400);
+        var assigneeIds = request.AssigneeIds ?? [];
+        if (assigneeIds.Distinct().Count() != assigneeIds.Count) return Problem("task-validation", "AssigneeIds no puede contener duplicados.", 400);
+        var assignees = await db.Users.Where(x => assigneeIds.Contains(x.Id)).ToListAsync(ct);
+        if (assignees.Count != assigneeIds.Count) return Problem("task-assignee-not-found", "No existe un responsable.", 404);
+        if (assignees.Any(x => !x.IsActive)) return Problem("task-assignee-inactive", "Un responsable está inactivo.", 409);
+        if (await db.ProjectMembers.CountAsync(x => x.ProjectId == projectId && assigneeIds.Contains(x.UserId), ct) != assigneeIds.Count) return Problem("task-assignee-not-project-member", "Un responsable no pertenece al proyecto.", 409);
+        try
+        {
+            var task = WorkTask.Create(projectId, stageId, request.Title ?? "", request.Description, priority, request.DueDate, creatorId, clock);
+            db.Tasks.Add(task);
+            db.TaskAssignees.AddRange(assigneeIds.Select(userId => TaskAssignee.Create(task.Id, userId, clock)));
+            await db.SaveChangesAsync(ct);
+            return Results.Created($"/api/tasks/{task.Id}", await Response(task, db, ct));
+        }
+        catch (ArgumentException exception) { return Problem("task-validation", "Los datos no son válidos.", 400, exception.Message); }
+    }
+
+    private static async Task<IResult> Get(Guid id, NakamaDbContext db, CancellationToken ct)
+    {
+        var task = await db.Tasks.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
+        return task is null ? Problem("task-not-found", "No existe la tarea.", 404) : Results.Ok(await Response(task, db, ct));
+    }
+
+    private static async Task<IResult> List(Guid projectId, Guid? stageId, string? status, string? priority, Guid? assigneeId, NakamaDbContext db, CancellationToken ct)
+    {
+        if (!await db.Projects.AsNoTracking().AnyAsync(x => x.Id == projectId, ct)) return Problem("project-not-found", "No existe el proyecto.", 404);
+        IQueryable<WorkTask> query = db.Tasks.AsNoTracking().Where(x => x.ProjectId == projectId);
+        if (stageId is { } stage) query = query.Where(x => x.StageId == stage);
+        if (status is not null)
+        {
+            if (!Enum.TryParse(status, false, out DomainTaskStatus parsedStatus) || !Enum.IsDefined(parsedStatus)) return Problem("task-validation", "Status inválido.", 400);
+            query = query.Where(x => x.Status == parsedStatus);
+        }
+        if (priority is not null)
+        {
+            if (!Enum.TryParse(priority, false, out TaskPriority parsedPriority) || !Enum.IsDefined(parsedPriority)) return Problem("task-validation", "Priority inválida.", 400);
+            query = query.Where(x => x.Priority == parsedPriority);
+        }
+        if (assigneeId is { } assignee) query = query.Where(x => db.TaskAssignees.Any(member => member.TaskId == x.Id && member.UserId == assignee));
+        var tasks = await query.OrderBy(x => x.DueDate == null).ThenBy(x => x.DueDate).ThenByDescending(x => x.CreatedAt).ToListAsync(ct);
+        return Results.Ok(await Responses(tasks, db, ct));
+    }
+
+    private static async Task<IResult> Update(Guid id, UpdateTaskRequest request, NakamaDbContext db, IClock clock, CancellationToken ct)
+    {
+        var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
+        if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
+        if (IsClosed(await db.Projects.SingleAsync(x => x.Id == task.ProjectId, ct))) return Problem("task-project-closed", "El proyecto está cerrado.", 409);
+        if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
+        if (!Enum.TryParse(request.Priority, false, out TaskPriority priority) || !Enum.IsDefined(priority)) return Problem("task-validation", "Priority inválida.", 400);
+        try { task.UpdateDetails(request.Title ?? "", request.Description, priority, request.DueDate, clock); db.Entry(task).Property(x => x.Version).OriginalValue = request.Version.Value; await db.SaveChangesAsync(ct); return Results.NoContent(); }
+        catch (ArgumentException exception) { return Problem("task-validation", "Datos inválidos.", 400, exception.Message); }
+        catch (DbUpdateConcurrencyException) { return Problem("task-version-conflict", "La tarea fue modificada.", 409); }
+    }
+
+    private static async Task<IResult> Move(Guid id, MoveTaskRequest request, NakamaDbContext db, IClock clock, CancellationToken ct)
+    {
+        var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
+        if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
+        if (IsClosed(await db.Projects.SingleAsync(x => x.Id == task.ProjectId, ct))) return Problem("task-project-closed", "El proyecto está cerrado.", 409);
+        if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
+        var stage = await db.Stages.SingleOrDefaultAsync(x => x.Id == request.StageId, ct);
+        if (stage is null) return Problem("stage-not-found", "No existe la etapa.", 404);
+        if (stage.ProjectId != task.ProjectId) return Problem("task-stage-project-mismatch", "La etapa no pertenece al proyecto.", 409);
+        if (!stage.IsActive) return Problem("task-stage-inactive", "La etapa está inactiva.", 409);
+        task.MoveToStage(stage.Id, clock); db.Entry(task).Property(x => x.Version).OriginalValue = request.Version.Value;
+        try { await db.SaveChangesAsync(ct); return Results.NoContent(); }
+        catch (DbUpdateConcurrencyException) { return Problem("task-version-conflict", "La tarea fue modificada.", 409); }
+    }
+
+    private static async Task<IResult> Add(Guid id, AddAssigneeRequest request, NakamaDbContext db, IClock clock, CancellationToken ct)
+    {
+        var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
+        if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
+        if (IsClosed(await db.Projects.SingleAsync(x => x.Id == task.ProjectId, ct))) return Problem("task-project-closed", "El proyecto está cerrado.", 409);
+        if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
+        if (request.UserId is not { } userId) return Problem("task-validation", "UserId es obligatorio.", 400);
+        var user = await db.Users.SingleOrDefaultAsync(x => x.Id == userId, ct);
+        if (user is null) return Problem("user-not-found", "No existe el usuario.", 404);
+        if (!user.IsActive) return Problem("task-assignee-inactive", "El usuario está inactivo.", 409);
+        if (!await db.ProjectMembers.AnyAsync(x => x.ProjectId == task.ProjectId && x.UserId == userId, ct)) return Problem("task-assignee-not-project-member", "El usuario no pertenece al proyecto.", 409);
+        if (await db.TaskAssignees.AnyAsync(x => x.TaskId == id && x.UserId == userId, ct)) return Problem("task-assignee-already-exists", "El usuario ya está asignado.", 409);
+        db.TaskAssignees.Add(TaskAssignee.Create(id, userId, clock)); task.ChangeAssignments(clock); db.Entry(task).Property(x => x.Version).OriginalValue = request.Version.Value;
+        try { await db.SaveChangesAsync(ct); return Results.Created($"/api/tasks/{id}/assignees/{userId}", new AssigneeResponse(userId, user.FullName, user.Email)); }
+        catch (DbUpdateConcurrencyException) { return Problem("task-version-conflict", "La tarea fue modificada.", 409); }
+    }
+
+    private static async Task<IResult> Remove(Guid id, Guid userId, [FromBody] VersionRequest request, NakamaDbContext db, IClock clock, CancellationToken ct)
+    {
+        var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
+        if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
+        if (IsClosed(await db.Projects.SingleAsync(x => x.Id == task.ProjectId, ct))) return Problem("task-project-closed", "El proyecto está cerrado.", 409);
+        if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
+        var assignee = await db.TaskAssignees.SingleOrDefaultAsync(x => x.TaskId == id && x.UserId == userId, ct);
+        if (assignee is null) return Problem("task-assignee-not-found", "El usuario no está asignado.", 404);
+        db.TaskAssignees.Remove(assignee); task.ChangeAssignments(clock); db.Entry(task).Property(x => x.Version).OriginalValue = request.Version.Value;
+        try { await db.SaveChangesAsync(ct); return Results.NoContent(); }
+        catch (DbUpdateConcurrencyException) { return Problem("task-version-conflict", "La tarea fue modificada.", 409); }
+    }
+
+    private static async Task<IResult> Flow(Guid id, VersionRequest request, NakamaDbContext db, IClock clock, CancellationToken ct, int operation)
+    {
+        var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
+        if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
+        if (IsClosed(await db.Projects.SingleAsync(x => x.Id == task.ProjectId, ct))) return Problem("task-project-closed", "El proyecto está cerrado.", 409);
+        if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
+        var hasUnsatisfiedDependencies = await HasUnsatisfiedDependenciesAsync(id, db, ct);
+        if ((operation is 1 or 2 or 4) && hasUnsatisfiedDependencies) return Problem("task-dependencies-not-satisfied", "Las dependencias no están satisfechas.", 409);
+        try
+        {
+            if (operation == 1) task.Start(clock); if (operation == 2) task.SubmitForReview(clock); if (operation == 3) task.RequestChanges(clock); if (operation == 4) task.Complete(clock); if (operation == 5) task.Cancel(clock);
+            db.Entry(task).Property(x => x.Version).OriginalValue = request.Version.Value; await db.SaveChangesAsync(ct); return Results.NoContent();
+        }
+        catch (InvalidOperationException exception) { return Problem("task-invalid-status-transition", "La transición no es válida.", 409, exception.Message); }
+        catch (DbUpdateConcurrencyException) { return Problem("task-version-conflict", "La tarea fue modificada.", 409); }
+    }
+
+    private static Task<bool> HasUnsatisfiedDependenciesAsync(Guid taskId, NakamaDbContext db, CancellationToken ct) => db.TaskDependencies.Join(db.Tasks, dependency => dependency.DependsOnTaskId, prerequisite => prerequisite.Id, (dependency, prerequisite) => new { dependency, prerequisite }).AnyAsync(x => x.dependency.TaskId == taskId && x.prerequisite.Status != DomainTaskStatus.Completed, ct);
+
+    private static async Task<IReadOnlyList<TaskResponse>> Responses(IReadOnlyList<WorkTask> tasks, NakamaDbContext db, CancellationToken ct)
+    {
+        if (tasks.Count == 0) return [];
+        var taskIds = tasks.Select(x => x.Id).ToArray();
+        var assignees = await (from member in db.TaskAssignees.AsNoTracking() join user in db.Users.AsNoTracking() on member.UserId equals user.Id where taskIds.Contains(member.TaskId) select new { member.TaskId, Assignee = new AssigneeResponse(user.Id, user.FullName, user.Email) }).ToListAsync(ct);
+        var subtaskProgress = await db.Subtasks.AsNoTracking().Where(x => taskIds.Contains(x.TaskId)).GroupBy(x => x.TaskId).Select(group => new { TaskId = group.Key, Completed = group.Count(x => x.IsCompleted), Total = group.Count() }).ToDictionaryAsync(x => x.TaskId, ct);
+        var dependencyProgress = await (from dependency in db.TaskDependencies.AsNoTracking()
+                                        join prerequisite in db.Tasks.AsNoTracking() on dependency.DependsOnTaskId equals prerequisite.Id
+                                        where taskIds.Contains(dependency.TaskId)
+                                        group prerequisite by dependency.TaskId into dependencyGroup
+                                        select new
+                                        {
+                                            TaskId = dependencyGroup.Key,
+                                            Satisfied = dependencyGroup.Count(x => x.Status == DomainTaskStatus.Completed),
+                                            Total = dependencyGroup.Count()
+                                        }).ToDictionaryAsync(x => x.TaskId, ct);
+        return tasks.Select(task =>
+        {
+            var subtasks = subtaskProgress.TryGetValue(task.Id, out var subtask) ? new SubtaskProgressResponse(subtask.Completed, subtask.Total) : new SubtaskProgressResponse(0, 0);
+            var dependencies = dependencyProgress.TryGetValue(task.Id, out var dependency) ? new DependencyProgressResponse(dependency.Satisfied, dependency.Total) : new DependencyProgressResponse(0, 0);
+            var pendingDependencyCount = dependencies.Total - dependencies.Satisfied;
+            return new TaskResponse(task.Id, task.ProjectId, task.StageId, task.Title, task.Description, task.Status.ToString(), task.Priority.ToString(), task.DueDate, assignees.Where(x => x.TaskId == task.Id).Select(x => x.Assignee).ToList(), task.Version, task.CreatedAt, task.UpdatedAt, task.CompletedAt, subtasks, dependencies, pendingDependencyCount == 0, pendingDependencyCount);
+        }).ToList();
+    }
+
+    private static async Task<TaskResponse> Response(WorkTask task, NakamaDbContext db, CancellationToken ct) => (await Responses([task], db, ct))[0];
 }

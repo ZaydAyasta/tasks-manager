@@ -8,6 +8,7 @@ public static class TasksModuleExtensions
         Features.TasksEndpoints.MapEndpoints(app);
         Features.TaskBlockersEndpoints.MapEndpoints(app);
         Features.SubtasksEndpoints.MapEndpoints(app);
+        Features.TaskDependenciesEndpoints.MapEndpoints(app);
         return app;
     }
 }
