@@ -1,0 +1,13 @@
+import { describe, expect, it, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
+vi.mock('../../app/services/api', () => ({ api: vi.fn() }))
+vi.mock('./work.service', () => ({ workService: { getMyWork: vi.fn() } }))
+vi.mock('../projects/projects.service', () => ({ projectsService: { list: vi.fn(), tasks: vi.fn(), userProjects: vi.fn() } }))
+import { workService } from './work.service'; import { projectsService } from '../projects/projects.service'; import MyWorkView from './MyWorkView.vue'; import WorkTaskCard from './WorkTaskCard.vue'
+const card = (status, id) => ({ id, title: `${status} task`, status, priority: status === 'Blocked' ? 'Critical' : 'Medium', project: { id: 'p', name: 'Proyecto Atlas' }, stage: { id: 's', name: 'Construcción' }, subtaskProgress: { completed: 1, total: 3 }, pendingDependencyCount: status === 'Pending' ? 2 : 0, activeBlockerCount: status === 'Blocked' ? 1 : 0 })
+const stubs = { RouterLink: { template: '<a><slot /></a>' } }
+describe('My Work', () => {
+  it('uses only the dedicated endpoint service', async () => { workService.getMyWork.mockResolvedValue({ items: [] }); mount(MyWorkView, { global: { stubs } }); await Promise.resolve(); expect(workService.getMyWork).toHaveBeenCalledOnce(); expect(projectsService.list).not.toHaveBeenCalled(); expect(projectsService.tasks).not.toHaveBeenCalled(); expect(projectsService.userProjects).not.toHaveBeenCalled() })
+  it('groups blocked work before the other statuses and handles empty state', async () => { workService.getMyWork.mockResolvedValue({ items: [card('Pending', 'p'), card('InReview', 'r'), card('InProgress', 'i'), card('Blocked', 'b')] }); const wrapper = mount(MyWorkView, { global: { stubs } }); await Promise.resolve(); await wrapper.vm.$nextTick(); const text = wrapper.text(); expect(text.indexOf('Bloqueadas')).toBeLessThan(text.indexOf('En progreso')); expect(text.indexOf('En progreso')).toBeLessThan(text.indexOf('Pendientes')); expect(text.indexOf('Pendientes')).toBeLessThan(text.indexOf('En revisión')); workService.getMyWork.mockResolvedValue({ items: [] }); const empty = mount(MyWorkView, { global: { stubs } }); await Promise.resolve(); await empty.vm.$nextTick(); expect(empty.text()).toContain('No tienes tareas asignadas') })
+  it('renders work context, progress, dependencies and blockers', () => { const wrapper = mount(WorkTaskCard, { props: { task: { ...card('Blocked', 'b'), pendingDependencyCount: 2 } }, global: { stubs } }); expect(wrapper.text()).toContain('Proyecto Atlas'); expect(wrapper.text()).toContain('Construcción'); expect(wrapper.text()).toContain('1/3 subtareas'); expect(wrapper.text()).toContain('Esperando 2 dependencias'); expect(wrapper.text()).toContain('1 bloqueo') })
+})

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nakama.Api.BuildingBlocks.Persistence;
 using Nakama.Api.BuildingBlocks.Time;
 using Nakama.Api.Modules.Identity.Domain;
+using Microsoft.AspNetCore.Identity;
 
 namespace Nakama.Api.Modules.Identity.Features;
 
@@ -13,7 +14,7 @@ internal static class CreateUser
     private static async Task<IResult> HandleAsync(
         CreateUserRequest request,
         NakamaDbContext dbContext,
-        IClock clock,
+        IClock clock, IPasswordHasher<User> passwordHasher,
         CancellationToken cancellationToken)
     {
         if (!IdentityEndpointHelpers.TryGetRole(request.Role, out var role))
@@ -21,10 +22,13 @@ internal static class CreateUser
             return IdentityEndpointHelpers.ValidationProblem("Role debe ser Admin o Collaborator.");
         }
 
+        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8)
+            return IdentityEndpointHelpers.ValidationProblem("Password debe tener al menos 8 caracteres.");
         User user;
         try
         {
-            user = User.Create(request.FullName ?? string.Empty, request.Email ?? string.Empty, role, clock);
+            var profile = User.Create(request.FullName ?? string.Empty, request.Email ?? string.Empty, role, "pending", clock);
+            user = User.Create(request.FullName ?? string.Empty, request.Email ?? string.Empty, role, passwordHasher.HashPassword(profile, request.Password), clock);
         }
         catch (ArgumentException exception)
         {

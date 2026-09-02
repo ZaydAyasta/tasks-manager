@@ -1,0 +1,2 @@
+<script setup>defineProps({ loading: Boolean, error: String, empty: Boolean, emptyTitle: { type: String, default: 'Aún no hay elementos' }, emptyDescription: { type: String, default: 'Cuando haya información disponible, aparecerá aquí.' } })</script>
+<template><div v-if="loading" class="state-card">Cargando información…</div><div v-else-if="error" class="state-card error"><b>No pudimos cargar esta vista.</b><span>{{ error }}</span></div><div v-else-if="empty" class="state-card"><b>{{ emptyTitle }}</b><span>{{ emptyDescription }}</span></div><slot v-else /></template>

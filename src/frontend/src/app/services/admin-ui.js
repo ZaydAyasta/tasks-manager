@@ -1,0 +1,9 @@
+export const canManage = auth => Boolean(auth?.isAdmin)
+export const projectPayload = form => ({ name: form.name.trim(), description: form.description?.trim() || null, startDate: form.startDate || null, endDate: form.endDate || null })
+export const taskPayload = (form, version) => ({ title: form.title.trim(), description: form.description?.trim() || null, priority: form.priority, dueDate: form.dueDate ? new Date(`${form.dueDate}T12:00:00`).toISOString() : null, version })
+export const availableMembers = (users, members) => users.filter(user => user.isActive && !members.some(member => member.userId === user.id))
+export const adminErrorMessage = error => {
+  const type = error?.problem?.type?.split('/').pop()
+  return ({ 'project-version-conflict': 'El proyecto cambió mientras lo editabas. Recargamos la información.', 'stage-version-conflict': 'La etapa fue modificada. Recargamos la información.', 'task-version-conflict': 'La tarea cambió mientras la estabas viendo. Actualizamos la información.', 'task-dependencies-not-satisfied': 'Aún hay dependencias pendientes.', 'task-subtasks-read-only': 'Las subtareas ya no pueden modificarse en este estado.', 'project-member-still-assigned-to-stages': 'No se puede quitar a esta persona porque aún participa en etapas.', 'project-member-still-assigned': 'No se puede quitar a esta persona porque aún tiene tareas asignadas.', 'project-owner-cannot-be-removed': 'La persona propietaria no se puede quitar del proyecto.' }[type] || error?.problem?.detail || error?.problem?.title || error?.message || 'No pudimos completar la operación.')
+}
+export async function runAdminMutation(operation, refresh, setError) { try { await operation(); await refresh(); return true } catch (error) { setError(adminErrorMessage(error)); if (error?.status === 409) await refresh(); return false } }

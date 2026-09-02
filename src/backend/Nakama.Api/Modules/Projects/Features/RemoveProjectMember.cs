@@ -1,14 +1,17 @@
 using Microsoft.EntityFrameworkCore;
 using Nakama.Api.BuildingBlocks.Persistence;
 using Nakama.Api.Modules.Projects.Domain;
+using Nakama.Api.Modules.Activity;
+using Nakama.Api.Modules.Activity.Domain;
+using Nakama.Api.Modules.Identity.Authentication;
 
 namespace Nakama.Api.Modules.Projects.Features;
 
 internal static class RemoveProjectMember
 {
-    public static void MapEndpoint(RouteGroupBuilder group) => group.MapDelete("/{projectId:guid}/members/{userId:guid}", HandleAsync);
+    public static void MapEndpoint(RouteGroupBuilder group) => group.MapDelete("/{projectId:guid}/members/{userId:guid}", HandleAsync).RequireAuthorization(Policies.Admin);
 
-    private static async Task<IResult> HandleAsync(Guid projectId, Guid userId, NakamaDbContext dbContext, CancellationToken cancellationToken)
+    private static async Task<IResult> HandleAsync(Guid projectId, Guid userId, NakamaDbContext dbContext, IActivityRecorder activities, CancellationToken cancellationToken)
     {
         if (!await dbContext.Projects.AsNoTracking().AnyAsync(project => project.Id == projectId, cancellationToken))
         {
@@ -40,6 +43,7 @@ internal static class RemoveProjectMember
         }
 
         dbContext.ProjectMembers.Remove(member);
+        activities.Record(projectId, null, ActivityType.ProjectMemberRemoved, new { memberUserId = userId });
         await dbContext.SaveChangesAsync(cancellationToken);
         return Results.NoContent();
     }

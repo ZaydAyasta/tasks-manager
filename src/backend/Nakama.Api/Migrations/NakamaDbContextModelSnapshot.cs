@@ -22,6 +22,52 @@ namespace Nakama.Api.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Nakama.Api.Modules.Activity.Domain.ActivityLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ActivityType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("activity_type");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("metadata_json");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<Guid?>("TaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("task_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("ProjectId", "OccurredAt", "Id")
+                        .HasDatabaseName("ix_activity_logs_project_occurred_id");
+
+                    b.HasIndex("TaskId", "OccurredAt", "Id")
+                        .HasDatabaseName("ix_activity_logs_task_occurred_id");
+
+                    b.ToTable("activity_logs", (string)null);
+                });
+
             modelBuilder.Entity("Nakama.Api.Modules.Identity.Domain.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -48,6 +94,12 @@ namespace Nakama.Api.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("password_hash");
 
                     b.Property<string>("Role")
                         .IsRequired()
@@ -380,6 +432,56 @@ namespace Nakama.Api.Migrations
                     b.ToTable("task_assignees", (string)null);
                 });
 
+            modelBuilder.Entity("Nakama.Api.Modules.Tasks.Domain.TaskAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)")
+                        .HasColumnName("original_file_name");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<string>("StoredFileName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("stored_file_name");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("task_id");
+
+                    b.Property<Guid>("UploadedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("uploaded_by_user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaskId");
+
+                    b.HasIndex("UploadedByUserId");
+
+                    b.ToTable("task_attachments", (string)null);
+                });
+
             modelBuilder.Entity("Nakama.Api.Modules.Tasks.Domain.TaskBlocker", b =>
                 {
                     b.Property<Guid>("Id")
@@ -434,6 +536,44 @@ namespace Nakama.Api.Migrations
                         {
                             t.HasCheckConstraint("ck_task_blockers_type", "type IN ('Dependency', 'Information', 'Approval', 'TechnicalIssue', 'External', 'Other')");
                         });
+                });
+
+            modelBuilder.Entity("Nakama.Api.Modules.Tasks.Domain.TaskComment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AuthorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("author_user_id");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("content");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("task_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorUserId");
+
+                    b.HasIndex("TaskId", "CreatedAt");
+
+                    b.ToTable("task_comments", (string)null);
                 });
 
             modelBuilder.Entity("Nakama.Api.Modules.Tasks.Domain.TaskDependency", b =>
@@ -568,6 +708,26 @@ namespace Nakama.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nakama.Api.Modules.Activity.Domain.ActivityLog", b =>
+                {
+                    b.HasOne("Nakama.Api.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Nakama.Api.Modules.Projects.Domain.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Nakama.Api.Modules.Tasks.Domain.WorkTask", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("Nakama.Api.Modules.Projects.Domain.Project", b =>
                 {
                     b.HasOne("Nakama.Api.Modules.Identity.Domain.User", null)
@@ -651,6 +811,21 @@ namespace Nakama.Api.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nakama.Api.Modules.Tasks.Domain.TaskAttachment", b =>
+                {
+                    b.HasOne("Nakama.Api.Modules.Tasks.Domain.WorkTask", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Nakama.Api.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UploadedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nakama.Api.Modules.Tasks.Domain.TaskBlocker", b =>
                 {
                     b.HasOne("Nakama.Api.Modules.Identity.Domain.User", null)
@@ -663,6 +838,21 @@ namespace Nakama.Api.Migrations
                         .WithMany()
                         .HasForeignKey("ResolvedByUserId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Nakama.Api.Modules.Tasks.Domain.WorkTask", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nakama.Api.Modules.Tasks.Domain.TaskComment", b =>
+                {
+                    b.HasOne("Nakama.Api.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("AuthorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("Nakama.Api.Modules.Tasks.Domain.WorkTask", null)
                         .WithMany()

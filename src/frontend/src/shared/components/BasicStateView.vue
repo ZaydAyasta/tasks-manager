@@ -1,0 +1,2 @@
+<script setup>defineProps({ kind: { type: String, default: 'notFound' } })</script>
+<template><section class="state-page"><div><p class="eyebrow">Nakama</p><h1>{{ kind === 'forbidden' ? 'Acceso restringido' : 'Página no encontrada' }}</h1><p>{{ kind === 'forbidden' ? 'No tienes permisos para acceder a este recurso.' : 'La dirección que buscas no existe o ya no está disponible.' }}</p><RouterLink class="button primary" to="/projects">Ir a proyectos</RouterLink></div></section></template>

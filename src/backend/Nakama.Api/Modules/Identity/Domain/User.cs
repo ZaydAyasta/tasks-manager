@@ -12,12 +12,13 @@ public sealed partial class User
     {
     }
 
-    private User(Guid id, string fullName, string email, UserRole role, DateTimeOffset createdAt)
+    private User(Guid id, string fullName, string email, UserRole role, string passwordHash, DateTimeOffset createdAt)
     {
         Id = id;
         FullName = fullName;
         Email = email;
         Role = role;
+        PasswordHash = passwordHash;
         IsActive = true;
         CreatedAt = createdAt;
         UpdatedAt = createdAt;
@@ -27,18 +28,24 @@ public sealed partial class User
     public string FullName { get; private set; } = null!;
     public string Email { get; private set; } = null!;
     public UserRole Role { get; private set; }
+    public string PasswordHash { get; private set; } = null!;
     public bool IsActive { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
-    public static User Create(string fullName, string email, UserRole role, IClock clock)
+    public static User Create(string fullName, string email, UserRole role, string passwordHash, IClock clock)
     {
         ArgumentNullException.ThrowIfNull(clock);
         EnsureValidRole(role);
 
         var now = clock.UtcNow;
-        return new User(Guid.NewGuid(), NormalizeFullName(fullName), NormalizeEmail(email), role, now);
+        if (string.IsNullOrWhiteSpace(passwordHash))
+            throw new ArgumentException("Password hash is required.", nameof(passwordHash));
+        return new User(Guid.NewGuid(), NormalizeFullName(fullName), NormalizeEmail(email), role, passwordHash, now);
     }
+
+    public static User Create(string fullName, string email, UserRole role, IClock clock) =>
+        Create(fullName, email, role, "!authentication-not-configured!", clock);
 
     public void UpdateProfile(string fullName, string email, IClock clock)
     {

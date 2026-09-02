@@ -4,12 +4,15 @@ using Nakama.Api.BuildingBlocks.Time;
 using Nakama.Api.Modules.Identity.Domain;
 using Nakama.Api.Modules.Projects.Domain;
 using Nakama.Api.Modules.Tasks.Domain;
+using Nakama.Api.Modules.Activity;
+using Nakama.Api.Modules.Activity.Domain;
 using DomainTaskStatus = Nakama.Api.Modules.Tasks.Domain.TaskStatus;
+using Nakama.Api.Modules.Identity.Authentication;
 
 namespace Nakama.Api.Modules.Tasks.Features;
 
-public sealed record ReportTaskBlockerRequest(string? Type, string? Description, Guid? ReportedByUserId, long? Version);
-public sealed record ResolveTaskBlockerRequest(Guid? ResolvedByUserId, long? Version);
+public sealed record ReportTaskBlockerRequest(string? Type, string? Description, long? Version);
+public sealed record ResolveTaskBlockerRequest(long? Version);
 public sealed record BlockerUserResponse(Guid Id, string FullName);
 public sealed record TaskBlockerResponse(Guid Id, Guid TaskId, string Type, string Description, BlockerUserResponse ReportedBy, DateTimeOffset ReportedAt, BlockerUserResponse? ResolvedBy, DateTimeOffset? ResolvedAt, bool IsResolved, long? TaskVersion);
 
@@ -17,7 +20,7 @@ internal static class TaskBlockersEndpoints
 {
     public static void MapEndpoints(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/tasks").WithTags("Task Blockers");
+        var group = app.MapGroup("/api/tasks").WithTags("Task Blockers").RequireAuthorization(Policies.AuthenticatedUser);
         group.MapPost("/{taskId:guid}/blockers", Report);
         group.MapGet("/{taskId:guid}/blockers", List);
         group.MapPost("/{taskId:guid}/blockers/{blockerId:guid}/resolve", Resolve);
@@ -26,14 +29,14 @@ internal static class TaskBlockersEndpoints
     private static IResult Problem(string type, string title, int status, string? detail = null) => Results.Problem(type: $"https://nakama/errors/{type}", title: title, detail: detail, statusCode: status);
     private static bool IsClosed(Project project) => project.Status is ProjectStatus.Completed or ProjectStatus.Cancelled;
 
-    private static async Task<IResult> Report(Guid taskId, ReportTaskBlockerRequest request, NakamaDbContext db, IClock clock, CancellationToken cancellationToken)
+    private static async Task<IResult> Report(Guid taskId, ReportTaskBlockerRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken cancellationToken)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(task => task.Id == taskId, cancellationToken);
         if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
         var project = await db.Projects.SingleAsync(project => project.Id == task.ProjectId, cancellationToken);
         if (IsClosed(project)) return Problem("task-project-closed", "El proyecto está cerrado.", 409);
         if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
-        if (request.ReportedByUserId is not { } reporterId) return Problem("task-validation", "ReportedByUserId es obligatorio.", 400);
+        var reporterId = currentUser.UserId;
         if (!Enum.TryParse(request.Type, false, out TaskBlockerType type) || !Enum.IsDefined(type)) return Problem("task-validation", "Type no es válido.", 400);
         var reporter = await db.Users.SingleOrDefaultAsync(user => user.Id == reporterId, cancellationToken);
         if (reporter is null) return Problem("user-not-found", "No existe el usuario.", 404);
@@ -46,6 +49,7 @@ internal static class TaskBlockersEndpoints
             task.Block(clock);
             db.Entry(task).Property(current => current.Version).OriginalValue = request.Version.Value;
             db.TaskBlockers.Add(blocker);
+            activities.Record(task.ProjectId, task.Id, ActivityType.BlockerReported, new { blockerId = blocker.Id, type = type.ToString() });
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return Results.Created($"/api/tasks/{task.Id}/blockers/{blocker.Id}", Response(blocker, reporter, null, task.Version));
@@ -67,7 +71,7 @@ internal static class TaskBlockersEndpoints
         return Results.Ok(blockers.Select(blocker => Response(blocker, users[blocker.ReportedByUserId], blocker.ResolvedByUserId is { } id ? users[id] : null, null)));
     }
 
-    private static async Task<IResult> Resolve(Guid taskId, Guid blockerId, ResolveTaskBlockerRequest request, NakamaDbContext db, IClock clock, CancellationToken cancellationToken)
+    private static async Task<IResult> Resolve(Guid taskId, Guid blockerId, ResolveTaskBlockerRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken cancellationToken)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(task => task.Id == taskId, cancellationToken);
         if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
@@ -76,7 +80,7 @@ internal static class TaskBlockersEndpoints
         if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
         if (blocker.IsResolved) return Problem("task-blocker-already-resolved", "El bloqueo ya fue resuelto.", 409);
         if (task.Status is not (DomainTaskStatus.Blocked or DomainTaskStatus.Cancelled)) return Problem("task-not-blocked", "La tarea no está bloqueada.", 409);
-        if (request.ResolvedByUserId is not { } resolverId) return Problem("task-validation", "ResolvedByUserId es obligatorio.", 400);
+        var resolverId = currentUser.UserId;
         var resolver = await db.Users.SingleOrDefaultAsync(user => user.Id == resolverId, cancellationToken);
         if (resolver is null) return Problem("user-not-found", "No existe el usuario.", 404);
         if (!resolver.IsActive) return Problem("task-blocker-user-inactive", "El usuario está inactivo.", 409);
@@ -87,6 +91,7 @@ internal static class TaskBlockersEndpoints
             blocker.Resolve(resolverId, clock);
             var otherActive = await db.TaskBlockers.AnyAsync(current => current.TaskId == taskId && current.Id != blockerId && current.ResolvedAt == null, cancellationToken);
             task.ResolveBlocker(otherActive, clock);
+            activities.Record(task.ProjectId, task.Id, ActivityType.BlockerResolved, new { blockerId });
             db.Entry(task).Property(current => current.Version).OriginalValue = request.Version.Value;
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

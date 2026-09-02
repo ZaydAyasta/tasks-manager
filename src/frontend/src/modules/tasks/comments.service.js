@@ -1,0 +1,2 @@
+import { api } from '../../app/services/api'
+export const commentsService = { list: id => api(`/api/tasks/${id}/comments`), create: (id, content) => api(`/api/tasks/${id}/comments`, { method: 'POST', body: { content } }), update: (taskId, id, content) => api(`/api/tasks/${taskId}/comments/${id}`, { method: 'PUT', body: { content } }), remove: (taskId, id) => api(`/api/tasks/${taskId}/comments/${id}`, { method: 'DELETE' }) }

@@ -2,7 +2,7 @@ using Nakama.Api.Modules.Identity.Domain;
 
 namespace Nakama.Api.Modules.Identity.Features;
 
-public sealed record CreateUserRequest(string? FullName, string? Email, string? Role);
+public sealed record CreateUserRequest(string? FullName, string? Email, string? Role, string? Password);
 public sealed record ChangeUserRoleRequest(string? Role);
 
 public sealed record UserDetailResponse(

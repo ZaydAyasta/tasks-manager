@@ -17,6 +17,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(user => user.FullName).HasColumnName("full_name").HasMaxLength(150).IsRequired();
         builder.Property(user => user.Email).HasColumnName("email").HasMaxLength(320).IsRequired();
         builder.Property(user => user.Role).HasColumnName("role").HasMaxLength(32).HasConversion<string>().IsRequired();
+        builder.Property(user => user.PasswordHash).HasColumnName("password_hash").HasMaxLength(512).IsRequired();
         builder.Property(user => user.IsActive).HasColumnName("is_active").IsRequired();
         builder.Property(user => user.CreatedAt).HasColumnName("created_at").HasColumnType("timestamp with time zone").IsRequired();
         builder.Property(user => user.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamp with time zone").IsRequired();

@@ -20,11 +20,11 @@ public sealed class SubtasksApiTests(PostgresApiFactory factory)
         Assert.Equal(HttpStatusCode.Created, first.StatusCode); var one = await first.Content.ReadFromJsonAsync<SubtaskResponse>();
         Assert.Equal("First", one!.Title); Assert.Equal(1, one.Position);
         var second = await CreateSubtask(client, task.Id, user.Id, one.TaskVersion!.Value, "Second"); var two = await second.Content.ReadFromJsonAsync<SubtaskResponse>();
-        var complete = await client.PostAsJsonAsync($"/api/tasks/{task.Id}/subtasks/{one.Id}/complete", new { userId = user.Id, taskVersion = two!.TaskVersion });
+        var complete = await client.PostAsJsonAsync($"/api/tasks/{task.Id}/subtasks/{one.Id}/complete", new { taskVersion = two!.TaskVersion });
         Assert.Equal(HttpStatusCode.NoContent, complete.StatusCode);
         var detail = await client.GetFromJsonAsync<TaskResponse>($"/api/tasks/{task.Id}");
         Assert.Equal("Pending", detail!.Status); Assert.Equal(1, detail.SubtaskProgress.Completed); Assert.Equal(2, detail.SubtaskProgress.Total);
-        var reopen = await client.PostAsJsonAsync($"/api/tasks/{task.Id}/subtasks/{one.Id}/reopen", new { userId = user.Id, taskVersion = detail.Version });
+        var reopen = await client.PostAsJsonAsync($"/api/tasks/{task.Id}/subtasks/{one.Id}/reopen", new { taskVersion = detail.Version });
         Assert.Equal(HttpStatusCode.NoContent, reopen.StatusCode);
         var list = await client.GetFromJsonAsync<List<SubtaskResponse>>($"/api/tasks/{task.Id}/subtasks");
         Assert.False(list![0].IsCompleted); Assert.Null(list[0].CompletedAt);
@@ -42,7 +42,7 @@ public sealed class SubtasksApiTests(PostgresApiFactory factory)
     }
 
     private static async Task<SubtaskResponse> Read(Task<HttpResponseMessage> response) => (await (await response).Content.ReadFromJsonAsync<SubtaskResponse>())!;
-    private static Task<HttpResponseMessage> CreateSubtask(HttpClient client, Guid taskId, Guid userId, long version, string title) => client.PostAsJsonAsync($"/api/tasks/{taskId}/subtasks", new { title, createdByUserId = userId, taskVersion = version });
-    private static async Task<UserDetailResponse> CreateUser(HttpClient client, string email) { var response = await client.PostAsJsonAsync("/api/users", new { fullName = email, email, role = "Collaborator" }); response.EnsureSuccessStatusCode(); return (await response.Content.ReadFromJsonAsync<UserDetailResponse>())!; }
-    private static async Task<TaskResponse> CreateTask(HttpClient client, Guid userId) { var project = await client.PostAsJsonAsync("/api/projects", new { name = "P", createdByUserId = userId }); var p = (await project.Content.ReadFromJsonAsync<ProjectCreatedResponse>())!; var stage = await client.PostAsJsonAsync($"/api/projects/{p.Id}/stages", new { name = "S" }); var s = (await stage.Content.ReadFromJsonAsync<StageResponse>())!; var task = await client.PostAsJsonAsync($"/api/projects/{p.Id}/tasks", new { stageId = s.Id, title = "T", priority = "Low", createdByUserId = userId }); return (await task.Content.ReadFromJsonAsync<TaskResponse>())!; }
+    private static Task<HttpResponseMessage> CreateSubtask(HttpClient client, Guid taskId, Guid userId, long version, string title) => client.PostAsJsonAsync($"/api/tasks/{taskId}/subtasks", new { title, taskVersion = version });
+    private static async Task<UserDetailResponse> CreateUser(HttpClient client, string email) { var response = await client.PostAsJsonAsync("/api/users", new { fullName = email, email, role = "Collaborator", password = PostgresApiFactory.DefaultPassword }); response.EnsureSuccessStatusCode(); return (await response.Content.ReadFromJsonAsync<UserDetailResponse>())!; }
+    private static async Task<TaskResponse> CreateTask(HttpClient client, Guid userId) { var project = await client.PostAsJsonAsync("/api/projects", new { name = "P"}); var p = (await project.Content.ReadFromJsonAsync<ProjectCreatedResponse>())!; var stage = await client.PostAsJsonAsync($"/api/projects/{p.Id}/stages", new { name = "S" }); var s = (await stage.Content.ReadFromJsonAsync<StageResponse>())!; var task = await client.PostAsJsonAsync($"/api/projects/{p.Id}/tasks", new { stageId = s.Id, title = "T", priority = "Low"}); return (await task.Content.ReadFromJsonAsync<TaskResponse>())!; }
 }

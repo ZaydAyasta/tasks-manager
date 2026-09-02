@@ -3,11 +3,14 @@ using Microsoft.EntityFrameworkCore;
 using Nakama.Api.BuildingBlocks.Persistence;
 using Nakama.Api.BuildingBlocks.Time;
 using Nakama.Api.Modules.Tasks.Domain;
+using Nakama.Api.Modules.Activity;
+using Nakama.Api.Modules.Activity.Domain;
 using TaskState = Nakama.Api.Modules.Tasks.Domain.TaskStatus;
+using Nakama.Api.Modules.Identity.Authentication;
 
 namespace Nakama.Api.Modules.Tasks.Features;
 
-public sealed record CreateDependencyRequest(Guid? DependsOnTaskId, Guid? CreatedByUserId, long? TaskVersion);
+public sealed record CreateDependencyRequest(Guid? DependsOnTaskId, long? TaskVersion);
 public sealed record DependencyVersionRequest(long? TaskVersion);
 public sealed record DependencyTaskResponse(Guid Id, string Title, string Status);
 public sealed record DependencyUserResponse(Guid Id, string FullName, string Email);
@@ -17,7 +20,7 @@ internal static class TaskDependenciesEndpoints
 {
     public static void MapEndpoints(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/tasks").WithTags("Task Dependencies");
+        var group = app.MapGroup("/api/tasks").WithTags("Task Dependencies").RequireAuthorization(Policies.AuthenticatedUser);
         group.MapPost("/{id:guid}/dependencies", Create);
         group.MapGet("/{id:guid}/dependencies", List);
         group.MapGet("/{id:guid}/dependents", Dependents);
@@ -27,7 +30,7 @@ internal static class TaskDependenciesEndpoints
     private static IResult Problem(string type, int status) => Results.Problem(type: $"https://nakama/errors/{type}", statusCode: status);
     private static bool IsEditable(WorkTask task) => task.Status is TaskState.Pending or TaskState.InProgress or TaskState.Blocked;
 
-    private static async Task<IResult> Create(Guid id, CreateDependencyRequest request, NakamaDbContext db, IClock clock, CancellationToken ct)
+    private static async Task<IResult> Create(Guid id, CreateDependencyRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (task is null) return Problem("task-not-found", 404);
@@ -37,7 +40,7 @@ internal static class TaskDependenciesEndpoints
         var prerequisite = await db.Tasks.SingleOrDefaultAsync(x => x.Id == prerequisiteId, ct);
         if (prerequisite is null) return Problem("task-not-found", 404);
         if (prerequisite.ProjectId != task.ProjectId) return Problem("task-dependency-project-mismatch", 409);
-        if (request.CreatedByUserId is not { } userId || !await db.Users.AnyAsync(x => x.Id == userId && x.IsActive, ct)) return Problem("task-dependency-user-inactive", 409);
+        var userId = currentUser.UserId;
         if (!await db.ProjectMembers.AnyAsync(x => x.ProjectId == task.ProjectId && x.UserId == userId, ct)) return Problem("task-dependency-user-not-project-member", 409);
         if (await db.TaskDependencies.AnyAsync(x => x.TaskId == id && x.DependsOnTaskId == prerequisiteId, ct)) return Problem("task-dependency-already-exists", 409);
 
@@ -46,6 +49,7 @@ internal static class TaskDependenciesEndpoints
         if (CreatesCycle(id, prerequisiteId, edges.Select(x => (x.TaskId, x.DependsOnTaskId)))) return Problem("task-dependency-cycle", 409);
 
         db.TaskDependencies.Add(TaskDependency.Create(id, prerequisiteId, userId, clock));
+        activities.Record(task.ProjectId, task.Id, ActivityType.DependencyAdded, new { dependsOnTaskId = prerequisiteId });
         task.ChangeAssignments(clock);
         db.Entry(task).Property(x => x.Version).OriginalValue = request.TaskVersion.Value;
         try
@@ -99,7 +103,7 @@ internal static class TaskDependenciesEndpoints
             .ToListAsync(ct);
         return Results.Ok(dependents);
     }
-    private static async Task<IResult> Delete(Guid id, Guid dependencyId, [FromBody] DependencyVersionRequest request, NakamaDbContext db, IClock clock, CancellationToken ct)
+    private static async Task<IResult> Delete(Guid id, Guid dependencyId, [FromBody] DependencyVersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, CancellationToken ct)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (task is null) return Problem("task-not-found", 404);
@@ -108,6 +112,7 @@ internal static class TaskDependenciesEndpoints
         var dependency = await db.TaskDependencies.SingleOrDefaultAsync(x => x.Id == dependencyId && x.TaskId == id, ct);
         if (dependency is null) return Problem("task-dependency-not-found", 404);
         db.TaskDependencies.Remove(dependency);
+        activities.Record(task.ProjectId, task.Id, ActivityType.DependencyRemoved, new { dependencyId, dependency.DependsOnTaskId });
         task.ChangeAssignments(clock);
         db.Entry(task).Property(x => x.Version).OriginalValue = request.TaskVersion.Value;
         try

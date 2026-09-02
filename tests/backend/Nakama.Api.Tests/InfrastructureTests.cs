@@ -1,13 +1,14 @@
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Nakama.Api.BuildingBlocks.Time;
+using Nakama.Api.Tests.Identity;
 using Xunit;
 
 namespace Nakama.Api.Tests;
 
-public sealed class InfrastructureTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+[Collection(PostgresCollection.Name)]
+public sealed class InfrastructureTests(PostgresApiFactory factory)
 {
-    [Fact]
+    [PostgresFact]
     public void Service_provider_can_resolve_the_clock()
     {
         using var scope = factory.Services.CreateScope();
@@ -26,10 +27,10 @@ public sealed class InfrastructureTests(WebApplicationFactory<Program> factory) 
         Assert.True(timestamp <= DateTimeOffset.UtcNow);
     }
 
-    [Fact]
+    [PostgresFact]
     public async Task Health_endpoint_returns_success()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAnonymousClient();
 
         var response = await client.GetAsync("/health");
 

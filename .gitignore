@@ -11,5 +11,9 @@ coverage-reports/
 .testagent/
 .env
 .env.*
+node_modules/
+dist/
+**/node_modules/
+**/dist/
 appsettings.Development.local.json
 appsettings.*.local.json

@@ -2,7 +2,7 @@ using Nakama.Api.Modules.Projects.Domain;
 
 namespace Nakama.Api.Modules.Projects.Features;
 
-public sealed record CreateProjectRequest(string? Name, string? Description, DateOnly? StartDate, DateOnly? EndDate, Guid? CreatedByUserId);
+public sealed record CreateProjectRequest(string? Name, string? Description, DateOnly? StartDate, DateOnly? EndDate);
 public sealed record UpdateProjectRequest(string? Name, string? Description, DateOnly? StartDate, DateOnly? EndDate, int? Version);
 public sealed record ProjectVersionRequest(int? Version);
 public sealed record AddProjectMemberRequest(Guid? UserId);

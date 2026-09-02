@@ -14,7 +14,7 @@ public sealed class IdentityApiTests(PostgresApiFactory factory)
         await ResetDatabaseAsync();
         using var client = factory.CreateClient();
 
-        var response = await client.PostAsJsonAsync("/api/users", new { fullName = "Sofía Paredes", email = "Sofia@Nakama.com", role = "Collaborator" });
+        var response = await client.PostAsJsonAsync("/api/users", new { fullName = "Sofía Paredes", email = "Sofia@Nakama.com", role = "Collaborator", password = "Password1" });
         var user = await response.Content.ReadFromJsonAsync<UserDetailResponse>();
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -31,10 +31,10 @@ public sealed class IdentityApiTests(PostgresApiFactory factory)
     {
         await ResetDatabaseAsync();
         using var client = factory.CreateClient();
-        var request = new { fullName = "Sofía Paredes", email = "sofia@nakama.com", role = "Collaborator" };
+        var request = new { fullName = "Sofía Paredes", email = "sofia@nakama.com", role = "Collaborator", password = "Password1" };
         await client.PostAsJsonAsync("/api/users", request);
 
-        var response = await client.PostAsJsonAsync("/api/users", new { fullName = "Otra Sofía", email = "SOFIA@NAKAMA.COM", role = "Admin" });
+        var response = await client.PostAsJsonAsync("/api/users", new { fullName = "Otra Sofía", email = "SOFIA@NAKAMA.COM", role = "Admin", password = "Password1" });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
@@ -46,7 +46,7 @@ public sealed class IdentityApiTests(PostgresApiFactory factory)
         await ResetDatabaseAsync();
         using var client = factory.CreateClient();
 
-        var response = await client.PostAsJsonAsync("/api/users", new { fullName = "", email = "invalid", role = "Owner" });
+        var response = await client.PostAsJsonAsync("/api/users", new { fullName = "", email = "invalid", role = "Owner", password = "Password1" });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
@@ -91,7 +91,7 @@ public sealed class IdentityApiTests(PostgresApiFactory factory)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(users);
-        Assert.Single(users);
+        Assert.Contains(users!, user => user.Email == "sofia@nakama.com");
     }
 
     [PostgresFact]
@@ -133,7 +133,7 @@ public sealed class IdentityApiTests(PostgresApiFactory factory)
 
     private static async Task<UserDetailResponse> CreateUserAsync(HttpClient client)
     {
-        var response = await client.PostAsJsonAsync("/api/users", new { fullName = "Sofía Paredes", email = "sofia@nakama.com", role = "Collaborator" });
+        var response = await client.PostAsJsonAsync("/api/users", new { fullName = "Sofía Paredes", email = "sofia@nakama.com", role = "Collaborator", password = "Password1" });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<UserDetailResponse>())!;
     }

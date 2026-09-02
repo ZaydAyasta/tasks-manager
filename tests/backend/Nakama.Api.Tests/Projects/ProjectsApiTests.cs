@@ -15,9 +15,9 @@ public sealed class ProjectsApiTests(PostgresApiFactory factory)
     {
         await factory.ResetDatabaseAsync();
         using var client = factory.CreateClient();
-        var creator = await CreateUserAsync(client, "owner@nakama.com");
+        var creator = await client.GetFromJsonAsync<MeResponse>("/api/auth/me");
 
-        var response = await client.PostAsJsonAsync("/api/projects", new { name = "Portal", description = "Redesign", startDate = "2026-09-01", endDate = "2026-10-15", createdByUserId = creator.Id });
+        var response = await client.PostAsJsonAsync("/api/projects", new { name = "Portal", description = "Redesign", startDate = "2026-09-01", endDate = "2026-10-15"});
         var project = await response.Content.ReadFromJsonAsync<ProjectCreatedResponse>();
         var members = await client.GetFromJsonAsync<List<ProjectMemberResponse>>($"/api/projects/{project!.Id}/members");
 
@@ -25,24 +25,17 @@ public sealed class ProjectsApiTests(PostgresApiFactory factory)
         Assert.Equal("Active", project.Status);
         Assert.Single(members!);
         Assert.Equal("Owner", members![0].Role);
-        Assert.Equal(creator.Id, members[0].UserId);
+        Assert.Equal(creator!.Id, members[0].UserId);
     }
 
     [PostgresFact]
-    public async Task Post_project_rejects_missing_or_inactive_creator_and_invalid_dates()
+    public async Task Post_project_rejects_invalid_dates()
     {
         await factory.ResetDatabaseAsync();
         using var client = factory.CreateClient();
 
-        var missing = await client.PostAsJsonAsync("/api/projects", new { name = "Portal", createdByUserId = Guid.NewGuid() });
-        var creator = await CreateUserAsync(client, "inactive@nakama.com");
-        var activeCreator = await CreateUserAsync(client, "active@nakama.com");
-        await client.PostAsync($"/api/users/{creator.Id}/deactivate", null);
-        var inactive = await client.PostAsJsonAsync("/api/projects", new { name = "Portal", createdByUserId = creator.Id });
-        var invalidDates = await client.PostAsJsonAsync("/api/projects", new { name = "Portal", startDate = "2026-10-01", endDate = "2026-09-01", createdByUserId = activeCreator.Id });
+        var invalidDates = await client.PostAsJsonAsync("/api/projects", new { name = "Portal", startDate = "2026-10-01", endDate = "2026-09-01"});
 
-        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
-        Assert.Equal(HttpStatusCode.Conflict, inactive.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, invalidDates.StatusCode);
     }
 
@@ -51,16 +44,16 @@ public sealed class ProjectsApiTests(PostgresApiFactory factory)
     {
         await factory.ResetDatabaseAsync();
         using var client = factory.CreateClient();
-        var owner = await CreateUserAsync(client, "owner@nakama.com");
+        var owner = await client.GetFromJsonAsync<MeResponse>("/api/auth/me");
         var member = await CreateUserAsync(client, "member@nakama.com");
         var inactiveMember = await CreateUserAsync(client, "inactive-member@nakama.com");
-        var project = await CreateProjectAsync(client, owner.Id);
+        var project = await CreateProjectAsync(client);
         await client.PostAsync($"/api/users/{inactiveMember.Id}/deactivate", null);
 
         var added = await client.PostAsJsonAsync($"/api/projects/{project.Id}/members", new { userId = member.Id });
         var duplicate = await client.PostAsJsonAsync($"/api/projects/{project.Id}/members", new { userId = member.Id });
         var inactive = await client.PostAsJsonAsync($"/api/projects/{project.Id}/members", new { userId = inactiveMember.Id });
-        var ownerRemoval = await client.DeleteAsync($"/api/projects/{project.Id}/members/{owner.Id}");
+        var ownerRemoval = await client.DeleteAsync($"/api/projects/{project.Id}/members/{owner!.Id}");
         var memberRemoval = await client.DeleteAsync($"/api/projects/{project.Id}/members/{member.Id}");
 
         Assert.Equal(HttpStatusCode.Created, added.StatusCode);
@@ -75,15 +68,15 @@ public sealed class ProjectsApiTests(PostgresApiFactory factory)
     {
         await factory.ResetDatabaseAsync();
         using var client = factory.CreateClient();
-        var owner = await CreateUserAsync(client, "owner@nakama.com");
+        var owner = await client.GetFromJsonAsync<MeResponse>("/api/auth/me");
         var outsider = await CreateUserAsync(client, "outsider@nakama.com");
-        var project = await CreateProjectAsync(client, owner.Id);
+        var project = await CreateProjectAsync(client);
 
         var detail = await client.GetFromJsonAsync<ProjectDetailResponse>($"/api/projects/{project.Id}");
-        var ownerProjects = await client.GetFromJsonAsync<List<ProjectListItemResponse>>($"/api/users/{owner.Id}/projects");
+        var ownerProjects = await client.GetFromJsonAsync<List<ProjectListItemResponse>>($"/api/users/{owner!.Id}/projects");
         var outsiderProjects = await client.GetFromJsonAsync<List<ProjectListItemResponse>>($"/api/users/{outsider.Id}/projects");
 
-        Assert.Equal(owner.Id, detail!.Owner.Id);
+        Assert.Equal(owner!.Id, detail!.Owner.Id);
         Assert.Single(detail.Members);
         Assert.Single(ownerProjects!);
         Assert.Empty(outsiderProjects!);
@@ -94,8 +87,7 @@ public sealed class ProjectsApiTests(PostgresApiFactory factory)
     {
         await factory.ResetDatabaseAsync();
         using var client = factory.CreateClient();
-        var owner = await CreateUserAsync(client, "owner@nakama.com");
-        var project = await CreateProjectAsync(client, owner.Id);
+        var project = await CreateProjectAsync(client);
 
         var firstUpdate = await client.PutAsJsonAsync($"/api/projects/{project.Id}", new { name = "Portal v2", version = project.Version });
         var staleUpdate = await client.PutAsJsonAsync($"/api/projects/{project.Id}", new { name = "Portal v3", version = project.Version });
@@ -106,14 +98,14 @@ public sealed class ProjectsApiTests(PostgresApiFactory factory)
 
     private static async Task<UserDetailResponse> CreateUserAsync(HttpClient client, string email)
     {
-        var response = await client.PostAsJsonAsync("/api/users", new { fullName = email, email, role = "Collaborator" });
+        var response = await client.PostAsJsonAsync("/api/users", new { fullName = email, email, role = "Collaborator", password = PostgresApiFactory.DefaultPassword });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<UserDetailResponse>())!;
     }
 
-    private static async Task<ProjectCreatedResponse> CreateProjectAsync(HttpClient client, Guid creatorId)
+    private static async Task<ProjectCreatedResponse> CreateProjectAsync(HttpClient client)
     {
-        var response = await client.PostAsJsonAsync("/api/projects", new { name = "Portal", createdByUserId = creatorId });
+        var response = await client.PostAsJsonAsync("/api/projects", new { name = "Portal"});
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ProjectCreatedResponse>())!;
     }

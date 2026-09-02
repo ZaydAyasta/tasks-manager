@@ -1,3 +1,5 @@
+using Nakama.Api.Modules.Identity.Authentication;
+
 namespace Nakama.Api.Modules.Projects;
 
 public static class ProjectsModuleExtensions
@@ -6,7 +8,7 @@ public static class ProjectsModuleExtensions
 
     public static IEndpointRouteBuilder MapProjectsEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/projects").WithTags("Projects");
+        var group = app.MapGroup("/api/projects").WithTags("Projects").RequireAuthorization(Policies.AuthenticatedUser);
 
         Features.CreateProject.MapEndpoint(group);
         Features.ListProjects.MapEndpoint(group);

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nakama.Api.Modules.Activity.Domain;
 using Nakama.Api.Modules.Identity.Domain;
 using Nakama.Api.Modules.Projects.Domain;
 using Nakama.Api.Modules.Tasks.Domain;
@@ -17,6 +18,9 @@ public sealed class NakamaDbContext(DbContextOptions<NakamaDbContext> options) :
     public DbSet<TaskBlocker> TaskBlockers => Set<TaskBlocker>();
     public DbSet<Subtask> Subtasks => Set<Subtask>();
     public DbSet<TaskDependency> TaskDependencies => Set<TaskDependency>();
+    public DbSet<TaskComment> TaskComments => Set<TaskComment>();
+    public DbSet<TaskAttachment> TaskAttachments => Set<TaskAttachment>();
+    public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

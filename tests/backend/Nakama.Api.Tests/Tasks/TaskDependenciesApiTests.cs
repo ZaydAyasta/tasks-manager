@@ -102,9 +102,9 @@ public sealed class TaskDependenciesApiTests(PostgresApiFactory factory)
 
     private static async Task<ProjectSetup> CreateProjectSetup(HttpClient client, string email)
     {
-        var userResponse = await client.PostAsJsonAsync("/api/users", new { fullName = email, email, role = "Collaborator" });
+        var userResponse = await client.PostAsJsonAsync("/api/users", new { fullName = email, email, role = "Collaborator", password = PostgresApiFactory.DefaultPassword });
         var user = (await userResponse.Content.ReadFromJsonAsync<UserDetailResponse>())!;
-        var projectResponse = await client.PostAsJsonAsync("/api/projects", new { name = "Dependencies", createdByUserId = user.Id });
+        var projectResponse = await client.PostAsJsonAsync("/api/projects", new { name = "Dependencies"});
         var project = (await projectResponse.Content.ReadFromJsonAsync<ProjectCreatedResponse>())!;
         var stageResponse = await client.PostAsJsonAsync($"/api/projects/{project.Id}/stages", new { name = "Stage" });
         var stage = (await stageResponse.Content.ReadFromJsonAsync<StageResponse>())!;
@@ -113,13 +113,13 @@ public sealed class TaskDependenciesApiTests(PostgresApiFactory factory)
 
     private static async Task<TaskResponse> CreateTask(HttpClient client, ProjectSetup setup, string title)
     {
-        var response = await client.PostAsJsonAsync($"/api/projects/{setup.Project.Id}/tasks", new { stageId = setup.Stage.Id, title, priority = "Medium", createdByUserId = setup.User.Id });
+        var response = await client.PostAsJsonAsync($"/api/projects/{setup.Project.Id}/tasks", new { stageId = setup.Stage.Id, title, priority = "Medium"});
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<TaskResponse>())!;
     }
 
     private static Task<HttpResponseMessage> AddDependency(HttpClient client, TaskResponse task, Guid prerequisiteId, Guid userId) =>
-        client.PostAsJsonAsync($"/api/tasks/{task.Id}/dependencies", new { dependsOnTaskId = prerequisiteId, createdByUserId = userId, taskVersion = task.Version });
+        client.PostAsJsonAsync($"/api/tasks/{task.Id}/dependencies", new { dependsOnTaskId = prerequisiteId, taskVersion = task.Version });
     private static async Task<TaskResponse> GetTask(HttpClient client, Guid taskId) => (await client.GetFromJsonAsync<TaskResponse>($"/api/tasks/{taskId}"))!;
     private static async Task Complete(HttpClient client, Guid taskId)
     {

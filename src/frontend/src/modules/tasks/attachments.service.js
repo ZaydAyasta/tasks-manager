@@ -1,0 +1,2 @@
+import { api, apiBlob, apiForm } from '../../app/services/api'
+export const attachmentsService = { list: id => api(`/api/tasks/${id}/attachments`), upload: (id, file) => { const form = new FormData(); form.append('file', file); return apiForm(`/api/tasks/${id}/attachments`, form) }, remove: (taskId, id) => api(`/api/tasks/${taskId}/attachments/${id}`, { method: 'DELETE' }), download: id => apiBlob(id) }

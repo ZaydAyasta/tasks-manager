@@ -2,19 +2,19 @@ using Microsoft.EntityFrameworkCore;
 using Nakama.Api.BuildingBlocks.Persistence;
 using Nakama.Api.BuildingBlocks.Time;
 using Nakama.Api.Modules.Projects.Domain;
+using Nakama.Api.Modules.Activity;
+using Nakama.Api.Modules.Activity.Domain;
+using Nakama.Api.Modules.Identity.Authentication;
 
 namespace Nakama.Api.Modules.Projects.Features;
 
 internal static class CreateProject
 {
-    public static void MapEndpoint(RouteGroupBuilder group) => group.MapPost("", HandleAsync);
+    public static void MapEndpoint(RouteGroupBuilder group) => group.MapPost("", HandleAsync).RequireAuthorization(Policies.Admin);
 
-    private static async Task<IResult> HandleAsync(CreateProjectRequest request, NakamaDbContext dbContext, IClock clock, CancellationToken cancellationToken)
+    private static async Task<IResult> HandleAsync(CreateProjectRequest request, NakamaDbContext dbContext, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken cancellationToken)
     {
-        if (request.CreatedByUserId is not { } creatorId || creatorId == Guid.Empty)
-        {
-            return ProjectEndpointHelpers.Validation("CreatedByUserId es obligatorio.");
-        }
+        var creatorId = currentUser.UserId;
 
         var creator = await ProjectEndpointHelpers.FindUserAsync(dbContext, creatorId, cancellationToken);
         if (creator is null)
@@ -39,6 +39,7 @@ internal static class CreateProject
 
         dbContext.Projects.Add(project);
         dbContext.ProjectMembers.Add(ProjectMember.Create(project.Id, creatorId, ProjectRole.Owner, clock));
+        activities.Record(project.Id, null, ActivityType.ProjectCreated, new { project.Name });
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var response = new ProjectCreatedResponse(
