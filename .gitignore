@@ -17,3 +17,4 @@ dist/
 **/dist/
 appsettings.Development.local.json
 appsettings.*.local.json
+src/backend/Nakama.Api/App_Data/

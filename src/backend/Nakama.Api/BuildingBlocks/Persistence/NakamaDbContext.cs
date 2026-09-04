@@ -3,6 +3,7 @@ using Nakama.Api.Modules.Activity.Domain;
 using Nakama.Api.Modules.Identity.Domain;
 using Nakama.Api.Modules.Projects.Domain;
 using Nakama.Api.Modules.Tasks.Domain;
+using Nakama.Api.Modules.Notifications.Domain;
 
 namespace Nakama.Api.BuildingBlocks.Persistence;
 
@@ -20,6 +21,8 @@ public sealed class NakamaDbContext(DbContextOptions<NakamaDbContext> options) :
     public DbSet<TaskDependency> TaskDependencies => Set<TaskDependency>();
     public DbSet<TaskComment> TaskComments => Set<TaskComment>();
     public DbSet<TaskAttachment> TaskAttachments => Set<TaskAttachment>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

@@ -8,6 +8,9 @@ using Nakama.Api.Modules.Activity;
 using Nakama.Api.Modules.Activity.Domain;
 using DomainTaskStatus = Nakama.Api.Modules.Tasks.Domain.TaskStatus;
 using Nakama.Api.Modules.Identity.Authentication;
+using Nakama.Api.Modules.Notifications;
+using Nakama.Api.Modules.Notifications.Domain;
+using Nakama.Api.Modules.Projects.Features;
 
 namespace Nakama.Api.Modules.Tasks.Features;
 
@@ -34,11 +37,11 @@ internal static class TasksEndpoints
         tasks.MapPut("/{id:guid}/stage", Move).RequireAuthorization(Policies.Admin);
         tasks.MapPost("/{id:guid}/assignees", Add).RequireAuthorization(Policies.Admin);
         tasks.MapDelete("/{id:guid}/assignees/{userId:guid}", Remove).RequireAuthorization(Policies.Admin);
-        tasks.MapPost("/{id:guid}/start", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct) => Flow(id, request, db, clock, activities, currentUser, ct, 1));
-        tasks.MapPost("/{id:guid}/submit-review", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct) => Flow(id, request, db, clock, activities, currentUser, ct, 2));
-        tasks.MapPost("/{id:guid}/request-changes", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct) => Flow(id, request, db, clock, activities, currentUser, ct, 3)).RequireAuthorization(Policies.Admin);
-        tasks.MapPost("/{id:guid}/complete", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct) => Flow(id, request, db, clock, activities, currentUser, ct, 4)).RequireAuthorization(Policies.Admin);
-        tasks.MapPost("/{id:guid}/cancel", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct) => Flow(id, request, db, clock, activities, currentUser, ct, 5)).RequireAuthorization(Policies.Admin);
+        tasks.MapPost("/{id:guid}/start", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, INotificationWriter notifications, ICurrentUser currentUser, CancellationToken ct) => Flow(id, request, db, clock, activities, notifications, currentUser, ct, 1));
+        tasks.MapPost("/{id:guid}/submit-review", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, INotificationWriter notifications, ICurrentUser currentUser, CancellationToken ct) => Flow(id, request, db, clock, activities, notifications, currentUser, ct, 2));
+        tasks.MapPost("/{id:guid}/request-changes", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, INotificationWriter notifications, ICurrentUser currentUser, CancellationToken ct) => Flow(id, request, db, clock, activities, notifications, currentUser, ct, 3)).RequireAuthorization(Policies.Admin);
+        tasks.MapPost("/{id:guid}/complete", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, INotificationWriter notifications, ICurrentUser currentUser, CancellationToken ct) => Flow(id, request, db, clock, activities, notifications, currentUser, ct, 4)).RequireAuthorization(Policies.Admin);
+        tasks.MapPost("/{id:guid}/cancel", (Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, INotificationWriter notifications, ICurrentUser currentUser, CancellationToken ct) => Flow(id, request, db, clock, activities, notifications, currentUser, ct, 5)).RequireAuthorization(Policies.Admin);
     }
 
     private static IResult Problem(string type, string title, int status, string? detail = null) => Results.Problem(type: $"https://nakama/errors/{type}", title: title, detail: detail, statusCode: status);
@@ -78,15 +81,18 @@ internal static class TasksEndpoints
         catch (ArgumentException exception) { return Problem("task-validation", "Los datos no son válidos.", 400, exception.Message); }
     }
 
-    private static async Task<IResult> Get(Guid id, NakamaDbContext db, CancellationToken ct)
+    private static async Task<IResult> Get(Guid id, NakamaDbContext db, ICurrentUser currentUser, CancellationToken ct)
     {
         var task = await db.Tasks.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
-        return task is null ? Problem("task-not-found", "No existe la tarea.", 404) : Results.Ok(await Response(task, db, ct));
+        if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return Problem("task-forbidden", "No tienes acceso a esta tarea.", 403);
+        return Results.Ok(await Response(task, db, ct));
     }
 
-    private static async Task<IResult> List(Guid projectId, Guid? stageId, string? status, string? priority, Guid? assigneeId, NakamaDbContext db, CancellationToken ct)
+    private static async Task<IResult> List(Guid projectId, Guid? stageId, string? status, string? priority, Guid? assigneeId, NakamaDbContext db, ICurrentUser currentUser, CancellationToken ct)
     {
         if (!await db.Projects.AsNoTracking().AnyAsync(x => x.Id == projectId, ct)) return Problem("project-not-found", "No existe el proyecto.", 404);
+        if (!await ProjectAccess.CanAccessAsync(db, projectId, currentUser, ct)) return Problem("project-forbidden", "No tienes acceso a este proyecto.", 403);
         IQueryable<WorkTask> query = db.Tasks.AsNoTracking().Where(x => x.ProjectId == projectId);
         if (stageId is { } stage) query = query.Where(x => x.StageId == stage);
         if (status is not null)
@@ -131,7 +137,7 @@ internal static class TasksEndpoints
         catch (DbUpdateConcurrencyException) { return Problem("task-version-conflict", "La tarea fue modificada.", 409); }
     }
 
-    private static async Task<IResult> Add(Guid id, AddAssigneeRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, CancellationToken ct)
+    private static async Task<IResult> Add(Guid id, AddAssigneeRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, INotificationWriter notifications, ICurrentUser currentUser, CancellationToken ct)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
@@ -143,12 +149,12 @@ internal static class TasksEndpoints
         if (!user.IsActive) return Problem("task-assignee-inactive", "El usuario está inactivo.", 409);
         if (!await db.ProjectMembers.AnyAsync(x => x.ProjectId == task.ProjectId && x.UserId == userId, ct)) return Problem("task-assignee-not-project-member", "El usuario no pertenece al proyecto.", 409);
         if (await db.TaskAssignees.AnyAsync(x => x.TaskId == id && x.UserId == userId, ct)) return Problem("task-assignee-already-exists", "El usuario ya está asignado.", 409);
-        db.TaskAssignees.Add(TaskAssignee.Create(id, userId, clock)); task.ChangeAssignments(clock); activities.Record(task.ProjectId, task.Id, ActivityType.TaskAssigneeAdded, new { assigneeUserId = userId }); db.Entry(task).Property(x => x.Version).OriginalValue = request.Version.Value;
+        db.TaskAssignees.Add(TaskAssignee.Create(id, userId, clock)); task.ChangeAssignments(clock); activities.Record(task.ProjectId, task.Id, ActivityType.TaskAssigneeAdded, new { assigneeUserId = userId }); await notifications.WriteAsync([userId], currentUser.UserId, NotificationType.TaskAssigned, task.ProjectId, task.Id, new { taskTitle = task.Title }, ct); db.Entry(task).Property(x => x.Version).OriginalValue = request.Version.Value;
         try { await db.SaveChangesAsync(ct); return Results.Created($"/api/tasks/{id}/assignees/{userId}", new AssigneeResponse(userId, user.FullName, user.Email)); }
         catch (DbUpdateConcurrencyException) { return Problem("task-version-conflict", "La tarea fue modificada.", 409); }
     }
 
-    private static async Task<IResult> Remove(Guid id, Guid userId, [FromBody] VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, CancellationToken ct)
+    private static async Task<IResult> Remove(Guid id, Guid userId, [FromBody] VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, INotificationWriter notifications, ICurrentUser currentUser, CancellationToken ct)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
@@ -156,12 +162,12 @@ internal static class TasksEndpoints
         if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
         var assignee = await db.TaskAssignees.SingleOrDefaultAsync(x => x.TaskId == id && x.UserId == userId, ct);
         if (assignee is null) return Problem("task-assignee-not-found", "El usuario no está asignado.", 404);
-        db.TaskAssignees.Remove(assignee); task.ChangeAssignments(clock); activities.Record(task.ProjectId, task.Id, ActivityType.TaskAssigneeRemoved, new { assigneeUserId = userId }); db.Entry(task).Property(x => x.Version).OriginalValue = request.Version.Value;
+        db.TaskAssignees.Remove(assignee); task.ChangeAssignments(clock); activities.Record(task.ProjectId, task.Id, ActivityType.TaskAssigneeRemoved, new { assigneeUserId = userId }); await notifications.WriteAsync([userId], currentUser.UserId, NotificationType.TaskUnassigned, task.ProjectId, task.Id, new { taskTitle = task.Title }, ct); db.Entry(task).Property(x => x.Version).OriginalValue = request.Version.Value;
         try { await db.SaveChangesAsync(ct); return Results.NoContent(); }
         catch (DbUpdateConcurrencyException) { return Problem("task-version-conflict", "La tarea fue modificada.", 409); }
     }
 
-    private static async Task<IResult> Flow(Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct, int operation)
+    private static async Task<IResult> Flow(Guid id, VersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, INotificationWriter notifications, ICurrentUser currentUser, CancellationToken ct, int operation)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
@@ -175,6 +181,14 @@ internal static class TasksEndpoints
             if (operation == 1) task.Start(clock); if (operation == 2) task.SubmitForReview(clock); if (operation == 3) task.RequestChanges(clock); if (operation == 4) task.Complete(clock); if (operation == 5) task.Cancel(clock);
             var activityType = operation switch { 1 => ActivityType.TaskStarted, 2 => ActivityType.TaskSubmittedForReview, 3 => ActivityType.TaskChangesRequested, 4 => ActivityType.TaskCompleted, 5 => ActivityType.TaskCancelled, _ => throw new InvalidOperationException() };
             activities.Record(task.ProjectId, task.Id, activityType);
+            if (operation is 2 or 3 or 4)
+            {
+                var recipients = operation == 2
+                    ? await db.ProjectMembers.Where(x => x.ProjectId == task.ProjectId && x.Role == ProjectRole.Owner).Select(x => x.UserId).ToListAsync(ct)
+                    : await db.TaskAssignees.Where(x => x.TaskId == task.Id).Select(x => x.UserId).ToListAsync(ct);
+                var type = operation == 2 ? NotificationType.TaskSubmittedForReview : operation == 3 ? NotificationType.TaskChangesRequested : NotificationType.TaskCompleted;
+                await notifications.WriteAsync(recipients, currentUser.UserId, type, task.ProjectId, task.Id, new { taskTitle = task.Title }, ct);
+            }
             db.Entry(task).Property(x => x.Version).OriginalValue = request.Version.Value; await db.SaveChangesAsync(ct); return Results.NoContent();
         }
         catch (InvalidOperationException exception) { return Problem("task-invalid-status-transition", "La transición no es válida.", 409, exception.Message); }

@@ -1,7 +1,9 @@
 using Nakama.Api.BuildingBlocks.Errors;
+using Nakama.Api.BuildingBlocks.Configuration;
 using Nakama.Api.BuildingBlocks.Persistence;
 using Nakama.Api.BuildingBlocks.Time;
 using Nakama.Api.Modules.Activity;
+using Nakama.Api.Modules.Dashboard;
 using Nakama.Api.Modules.Identity;
 using Nakama.Api.Modules.Notifications;
 using Nakama.Api.Modules.Projects;
@@ -16,6 +18,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+var runtimeSettings = RuntimeConfiguration.Validate(builder.Configuration, builder.Environment.EnvironmentName);
 
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
@@ -31,12 +34,10 @@ builder.Services.AddNakamaPersistence(builder.Configuration);
 builder.Services.AddNakamaHealthChecks(builder.Configuration);
 builder.Services.AddOpenApi();
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => policy
-    .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:5173"])
+    .WithOrigins(runtimeSettings.AllowedCorsOrigins.ToArray())
     .AllowAnyHeader()
     .AllowAnyMethod()));
-var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
-if (string.IsNullOrWhiteSpace(jwt.SigningKey))
-    throw new InvalidOperationException("Authentication:Jwt:SigningKey must be configured via user-secrets or an environment variable.");
+var jwt = runtimeSettings.Jwt;
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options => options.TokenValidationParameters = new TokenValidationParameters
@@ -63,11 +64,13 @@ builder.Services.AddProjectsModule();
 builder.Services.AddTasksModule();
 builder.Services.AddNotificationsModule();
 builder.Services.AddActivityModule();
+builder.Services.AddDashboardModule();
 builder.Services.AddReportingModule();
 
 var app = builder.Build();
 
 await Nakama.Api.Modules.Identity.Development.DevelopmentAdminSeeder.SeedAsync(app);
+await Nakama.Api.Modules.Identity.Development.PilotDataSeeder.SeedAsync(app);
 
 app.UseSerilogRequestLogging(options =>
 {
@@ -93,6 +96,7 @@ app.MapProjectsEndpoints();
 app.MapTasksEndpoints();
 app.MapNotificationsEndpoints();
 app.MapActivityEndpoints();
+app.MapDashboardEndpoints();
 app.MapReportingEndpoints();
 
 app.Run();

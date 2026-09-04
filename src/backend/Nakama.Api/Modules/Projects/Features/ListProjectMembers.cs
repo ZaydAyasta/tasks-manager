@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nakama.Api.BuildingBlocks.Persistence;
+using Nakama.Api.Modules.Identity.Authentication;
 
 namespace Nakama.Api.Modules.Projects.Features;
 
@@ -7,12 +8,14 @@ internal static class ListProjectMembers
 {
     public static void MapEndpoint(RouteGroupBuilder group) => group.MapGet("/{projectId:guid}/members", HandleAsync);
 
-    private static async Task<IResult> HandleAsync(Guid projectId, NakamaDbContext dbContext, CancellationToken cancellationToken)
+    private static async Task<IResult> HandleAsync(Guid projectId, NakamaDbContext dbContext, ICurrentUser currentUser, CancellationToken cancellationToken)
     {
         if (!await dbContext.Projects.AsNoTracking().AnyAsync(project => project.Id == projectId, cancellationToken))
         {
             return ProjectEndpointHelpers.ProjectNotFound(projectId);
         }
+        if (!await ProjectAccess.CanAccessAsync(dbContext, projectId, currentUser, cancellationToken))
+            return ProjectEndpointHelpers.Problem("project-forbidden", "No tienes acceso a este proyecto.", StatusCodes.Status403Forbidden);
 
         var members = await (from member in dbContext.ProjectMembers.AsNoTracking()
                              join user in dbContext.Users.AsNoTracking() on member.UserId equals user.Id

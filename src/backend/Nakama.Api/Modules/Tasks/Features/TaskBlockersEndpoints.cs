@@ -8,6 +8,9 @@ using Nakama.Api.Modules.Activity;
 using Nakama.Api.Modules.Activity.Domain;
 using DomainTaskStatus = Nakama.Api.Modules.Tasks.Domain.TaskStatus;
 using Nakama.Api.Modules.Identity.Authentication;
+using Nakama.Api.Modules.Notifications;
+using Nakama.Api.Modules.Notifications.Domain;
+using Nakama.Api.Modules.Projects.Features;
 
 namespace Nakama.Api.Modules.Tasks.Features;
 
@@ -29,10 +32,11 @@ internal static class TaskBlockersEndpoints
     private static IResult Problem(string type, string title, int status, string? detail = null) => Results.Problem(type: $"https://nakama/errors/{type}", title: title, detail: detail, statusCode: status);
     private static bool IsClosed(Project project) => project.Status is ProjectStatus.Completed or ProjectStatus.Cancelled;
 
-    private static async Task<IResult> Report(Guid taskId, ReportTaskBlockerRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken cancellationToken)
+    private static async Task<IResult> Report(Guid taskId, ReportTaskBlockerRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, INotificationWriter notifications, ICurrentUser currentUser, CancellationToken cancellationToken)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(task => task.Id == taskId, cancellationToken);
         if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, cancellationToken)) return Problem("task-forbidden", "No tienes acceso a esta tarea.", 403);
         var project = await db.Projects.SingleAsync(project => project.Id == task.ProjectId, cancellationToken);
         if (IsClosed(project)) return Problem("task-project-closed", "El proyecto está cerrado.", 409);
         if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
@@ -50,6 +54,9 @@ internal static class TaskBlockersEndpoints
             db.Entry(task).Property(current => current.Version).OriginalValue = request.Version.Value;
             db.TaskBlockers.Add(blocker);
             activities.Record(task.ProjectId, task.Id, ActivityType.BlockerReported, new { blockerId = blocker.Id, type = type.ToString() });
+            var owners = await db.ProjectMembers.Where(x => x.ProjectId == task.ProjectId && x.Role == ProjectRole.Owner).Select(x => x.UserId).ToListAsync(cancellationToken);
+            var assignees = await db.TaskAssignees.Where(x => x.TaskId == task.Id).Select(x => x.UserId).ToListAsync(cancellationToken);
+            await notifications.WriteAsync(owners.Concat(assignees), currentUser.UserId, NotificationType.BlockerReported, task.ProjectId, task.Id, new { taskTitle = task.Title, blockerType = type.ToString() }, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return Results.Created($"/api/tasks/{task.Id}/blockers/{blocker.Id}", Response(blocker, reporter, null, task.Version));
@@ -59,9 +66,11 @@ internal static class TaskBlockersEndpoints
         catch (DbUpdateConcurrencyException) { return Problem("task-version-conflict", "La tarea fue modificada.", 409); }
     }
 
-    private static async Task<IResult> List(Guid taskId, bool? active, NakamaDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> List(Guid taskId, bool? active, NakamaDbContext db, ICurrentUser currentUser, CancellationToken cancellationToken)
     {
-        if (!await db.Tasks.AsNoTracking().AnyAsync(task => task.Id == taskId, cancellationToken)) return Problem("task-not-found", "No existe la tarea.", 404);
+        var task = await db.Tasks.AsNoTracking().SingleOrDefaultAsync(task => task.Id == taskId, cancellationToken);
+        if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, cancellationToken)) return Problem("task-forbidden", "No tienes acceso a esta tarea.", 403);
         var query = db.TaskBlockers.AsNoTracking().Where(blocker => blocker.TaskId == taskId);
         if (active is true) query = query.Where(blocker => blocker.ResolvedAt == null);
         if (active is false) query = query.Where(blocker => blocker.ResolvedAt != null);
@@ -71,10 +80,11 @@ internal static class TaskBlockersEndpoints
         return Results.Ok(blockers.Select(blocker => Response(blocker, users[blocker.ReportedByUserId], blocker.ResolvedByUserId is { } id ? users[id] : null, null)));
     }
 
-    private static async Task<IResult> Resolve(Guid taskId, Guid blockerId, ResolveTaskBlockerRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken cancellationToken)
+    private static async Task<IResult> Resolve(Guid taskId, Guid blockerId, ResolveTaskBlockerRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, INotificationWriter notifications, ICurrentUser currentUser, CancellationToken cancellationToken)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(task => task.Id == taskId, cancellationToken);
         if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, cancellationToken)) return Problem("task-forbidden", "No tienes acceso a esta tarea.", 403);
         var blocker = await db.TaskBlockers.SingleOrDefaultAsync(blocker => blocker.Id == blockerId && blocker.TaskId == taskId, cancellationToken);
         if (blocker is null) return Problem("task-blocker-not-found", "No existe el bloqueo.", 404);
         if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
@@ -92,6 +102,8 @@ internal static class TaskBlockersEndpoints
             var otherActive = await db.TaskBlockers.AnyAsync(current => current.TaskId == taskId && current.Id != blockerId && current.ResolvedAt == null, cancellationToken);
             task.ResolveBlocker(otherActive, clock);
             activities.Record(task.ProjectId, task.Id, ActivityType.BlockerResolved, new { blockerId });
+            var assignees = await db.TaskAssignees.Where(x => x.TaskId == task.Id).Select(x => x.UserId).ToListAsync(cancellationToken);
+            await notifications.WriteAsync(assignees, currentUser.UserId, NotificationType.BlockerResolved, task.ProjectId, task.Id, new { taskTitle = task.Title }, cancellationToken);
             db.Entry(task).Property(current => current.Version).OriginalValue = request.Version.Value;
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

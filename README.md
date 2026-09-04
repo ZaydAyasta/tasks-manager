@@ -2,6 +2,10 @@
 
 Base técnica del sistema interno de gestión de proyectos y tareas.
 
+## Operaciones
+
+Para el piloto interno consulte [despliegue](docs/operations/deployment.md), [backup y restore](docs/operations/backup-restore.md), el [smoke test](docs/operations/pilot-smoke-test.md), los [datos UAT](docs/operations/pilot-test-data.md), el [registro de hallazgos](docs/operations/pilot-findings.md) y las [notas MVP RC1](docs/releases/mvp-rc1.md). Production requiere configuración externa para PostgreSQL, JWT, CORS y almacenamiento persistente de adjuntos.
+
 ## Frontend Vue
 
 El cliente web está en `src/frontend/` y usa Vue 3, Vite, Vue Router y Pinia.
@@ -13,7 +17,7 @@ npm install
 npm run dev
 ```
 
-`VITE_API_BASE_URL` configura la URL de la API; por defecto el ejemplo apunta a `http://localhost:5000`.
+`VITE_API_BASE_URL` configura la URL de la API; el ejemplo de localhost es exclusivamente para Development. Todo build de Production debe definir la URL HTTPS desplegada.
 Inicie antes la API con las credenciales JWT y PostgreSQL indicadas más abajo. En desarrollo, la API acepta por CORS `http://localhost:5173`; puede modificar `Cors:AllowedOrigins` si usa otro origen.
 
 El login consume `POST /api/auth/login` y la restauración de sesión verifica siempre `GET /api/auth/me`. El access token se conserva temporalmente en `localStorage` porque esta iteración no incluye refresh tokens ni cookies HttpOnly.
@@ -21,6 +25,8 @@ El login consume `POST /api/auth/login` y la restauración de sesión verifica s
 Los Admin pueden configurar el trabajo desde **Proyectos**: crear un proyecto, definir sus etapas y equipo, y luego crear/organizar las tareas desde el tablero. Todas las mutaciones vuelven a consultar la API para respetar la concurrencia del backend.
 
 Los Collaborator trabajan desde **Mi trabajo**, que consume `GET /api/me/work`. El endpoint usa el usuario del JWT, devuelve sólo sus tareas no terminales por defecto y entrega una página de resúmenes con proyecto, etapa, progreso, dependencias y bloqueos. No necesita ni acepta un `userId`.
+
+Los Admin inician en **Dashboard** (`/dashboard`). La vista consume exclusivamente `GET /api/admin/dashboard`: un read-model Admin-only que devuelve el resumen de tareas no terminales, progreso por proyecto y hasta 15 tareas priorizadas para atención. El endpoint usa `IClock` para vencimientos, no produce ActivityLog ni Notifications, y ejecuta consultas proyectadas y agrupadas más un único lote de responsables; nunca consulta por proyecto o tarea dentro de un bucle. `activeProjects` cuenta sólo proyectos `Active`; la lista conserva el estado de todos los proyectos y el progreso es `Completed / Total` de tareas, sin subtareas ni porcentajes persistidos.
 
 Estructura principal del frontend:
 

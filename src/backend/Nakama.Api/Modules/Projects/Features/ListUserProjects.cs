@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nakama.Api.BuildingBlocks.Persistence;
+using Nakama.Api.Modules.Identity.Authentication;
+using Nakama.Api.Modules.Identity.Domain;
 
 namespace Nakama.Api.Modules.Projects.Features;
 
@@ -7,8 +9,10 @@ internal static class ListUserProjects
 {
     public static void MapEndpoint(IEndpointRouteBuilder app) => app.MapGet("/api/users/{userId:guid}/projects", HandleAsync).WithTags("Projects");
 
-    private static async Task<IResult> HandleAsync(Guid userId, NakamaDbContext dbContext, CancellationToken cancellationToken)
+    private static async Task<IResult> HandleAsync(Guid userId, NakamaDbContext dbContext, ICurrentUser currentUser, CancellationToken cancellationToken)
     {
+        if (currentUser.Role != UserRole.Admin && currentUser.UserId != userId)
+            return ProjectEndpointHelpers.Problem("user-projects-forbidden", "No tienes acceso a los proyectos de este usuario.", StatusCodes.Status403Forbidden);
         if (!await dbContext.Users.AsNoTracking().AnyAsync(user => user.Id == userId, cancellationToken))
         {
             return ProjectEndpointHelpers.UserNotFound(userId);

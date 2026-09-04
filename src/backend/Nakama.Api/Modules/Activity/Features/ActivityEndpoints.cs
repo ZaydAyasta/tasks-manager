@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nakama.Api.BuildingBlocks.Persistence;
 using Nakama.Api.Modules.Identity.Authentication;
+using Nakama.Api.Modules.Projects.Features;
 
 namespace Nakama.Api.Modules.Activity.Features;
 
@@ -14,17 +15,20 @@ internal static class ActivityEndpoints
 {
     public static void MapEndpoints(IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/tasks/{taskId:guid}/activity", (Guid taskId, string? cursor, int? limit, NakamaDbContext db, CancellationToken ct) => GetFeed(taskId, true, cursor, limit, db, ct)).WithTags("Activity").RequireAuthorization(Policies.AuthenticatedUser);
-        app.MapGet("/api/projects/{projectId:guid}/activity", (Guid projectId, string? cursor, int? limit, NakamaDbContext db, CancellationToken ct) => GetFeed(projectId, false, cursor, limit, db, ct)).WithTags("Activity").RequireAuthorization(Policies.AuthenticatedUser);
+        app.MapGet("/api/tasks/{taskId:guid}/activity", (Guid taskId, string? cursor, int? limit, NakamaDbContext db, ICurrentUser currentUser, CancellationToken ct) => GetFeed(taskId, true, cursor, limit, db, currentUser, ct)).WithTags("Activity").RequireAuthorization(Policies.AuthenticatedUser);
+        app.MapGet("/api/projects/{projectId:guid}/activity", (Guid projectId, string? cursor, int? limit, NakamaDbContext db, ICurrentUser currentUser, CancellationToken ct) => GetFeed(projectId, false, cursor, limit, db, currentUser, ct)).WithTags("Activity").RequireAuthorization(Policies.AuthenticatedUser);
     }
 
-    private static async Task<IResult> GetFeed(Guid id, bool isTaskFeed, string? cursor, int? limit, NakamaDbContext db, CancellationToken ct)
+    private static async Task<IResult> GetFeed(Guid id, bool isTaskFeed, string? cursor, int? limit, NakamaDbContext db, ICurrentUser currentUser, CancellationToken ct)
     {
         var pageSize = Math.Clamp(limit ?? 50, 1, 100);
         var position = DecodeCursor(cursor);
         if (cursor is not null && position is null) return Results.Problem(type: "https://nakama/errors/activity-cursor-invalid", statusCode: 400);
-        if (isTaskFeed && !await db.Tasks.AsNoTracking().AnyAsync(x => x.Id == id, ct)) return Results.Problem(type: "https://nakama/errors/task-not-found", statusCode: 404);
-        if (!isTaskFeed && !await db.Projects.AsNoTracking().AnyAsync(x => x.Id == id, ct)) return Results.Problem(type: "https://nakama/errors/project-not-found", statusCode: 404);
+        var projectId = isTaskFeed
+            ? await db.Tasks.AsNoTracking().Where(x => x.Id == id).Select(x => (Guid?)x.ProjectId).SingleOrDefaultAsync(ct)
+            : await db.Projects.AsNoTracking().Where(x => x.Id == id).Select(x => (Guid?)x.Id).SingleOrDefaultAsync(ct);
+        if (projectId is null) return Results.Problem(type: isTaskFeed ? "https://nakama/errors/task-not-found" : "https://nakama/errors/project-not-found", statusCode: 404);
+        if (!await ProjectAccess.CanAccessAsync(db, projectId.Value, currentUser, ct)) return Results.Problem(type: "https://nakama/errors/activity-forbidden", statusCode: 403);
 
         var query = from activity in db.ActivityLogs.AsNoTracking()
                     join user in db.Users.AsNoTracking() on activity.ActorUserId equals user.Id

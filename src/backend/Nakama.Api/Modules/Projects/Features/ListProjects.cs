@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nakama.Api.BuildingBlocks.Persistence;
+using Nakama.Api.Modules.Identity.Authentication;
+using Nakama.Api.Modules.Identity.Domain;
 using Nakama.Api.Modules.Projects.Domain;
 
 namespace Nakama.Api.Modules.Projects.Features;
@@ -8,7 +10,7 @@ internal static class ListProjects
 {
     public static void MapEndpoint(RouteGroupBuilder group) => group.MapGet("", HandleAsync);
 
-    private static async Task<IResult> HandleAsync(string? status, NakamaDbContext dbContext, CancellationToken cancellationToken)
+    private static async Task<IResult> HandleAsync(string? status, NakamaDbContext dbContext, ICurrentUser currentUser, CancellationToken cancellationToken)
     {
         ProjectStatus? parsedStatus = null;
         if (status is not null)
@@ -22,6 +24,8 @@ internal static class ListProjects
         }
 
         var query = dbContext.Projects.AsNoTracking();
+        if (currentUser.Role != UserRole.Admin)
+            query = query.Where(project => dbContext.ProjectMembers.Any(member => member.ProjectId == project.Id && member.UserId == currentUser.UserId));
         if (parsedStatus is { } projectStatus)
         {
             query = query.Where(project => project.Status == projectStatus);

@@ -7,6 +7,7 @@ using Nakama.Api.Modules.Activity;
 using Nakama.Api.Modules.Activity.Domain;
 using TaskState = Nakama.Api.Modules.Tasks.Domain.TaskStatus;
 using Nakama.Api.Modules.Identity.Authentication;
+using Nakama.Api.Modules.Projects.Features;
 
 namespace Nakama.Api.Modules.Tasks.Features;
 
@@ -34,6 +35,7 @@ internal static class TaskDependenciesEndpoints
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (task is null) return Problem("task-not-found", 404);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return Problem("task-forbidden", 403);
         if (!IsEditable(task)) return Problem("task-dependencies-read-only", 409);
         if (request.TaskVersion is not > 0 || request.TaskVersion != task.Version) return Problem("task-version-conflict", 409);
         if (request.DependsOnTaskId is not { } prerequisiteId || prerequisiteId == id) return Problem("task-dependency-self-reference", 409);
@@ -79,9 +81,11 @@ internal static class TaskDependenciesEndpoints
         return false;
     }
 
-    private static async Task<IResult> List(Guid id, NakamaDbContext db, CancellationToken ct)
+    private static async Task<IResult> List(Guid id, NakamaDbContext db, ICurrentUser currentUser, CancellationToken ct)
     {
-        if (!await db.Tasks.AsNoTracking().AnyAsync(task => task.Id == id, ct)) return Problem("task-not-found", 404);
+        var task = await db.Tasks.AsNoTracking().SingleOrDefaultAsync(task => task.Id == id, ct);
+        if (task is null) return Problem("task-not-found", 404);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return Problem("task-forbidden", 403);
         var dependencies = await (from dependency in db.TaskDependencies.AsNoTracking()
                                   join prerequisite in db.Tasks.AsNoTracking() on dependency.DependsOnTaskId equals prerequisite.Id
                                   join creator in db.Users.AsNoTracking() on dependency.CreatedByUserId equals creator.Id
@@ -94,8 +98,11 @@ internal static class TaskDependenciesEndpoints
                                       dependency.CreatedAt)).ToListAsync(ct);
         return Results.Ok(dependencies);
     }
-    private static async Task<IResult> Dependents(Guid id, NakamaDbContext db, CancellationToken ct)
+    private static async Task<IResult> Dependents(Guid id, NakamaDbContext db, ICurrentUser currentUser, CancellationToken ct)
     {
+        var prerequisite = await db.Tasks.AsNoTracking().SingleOrDefaultAsync(task => task.Id == id, ct);
+        if (prerequisite is null) return Problem("task-not-found", 404);
+        if (!await ProjectAccess.CanAccessAsync(db, prerequisite.ProjectId, currentUser, ct)) return Problem("task-forbidden", 403);
         var dependents = await (from dependency in db.TaskDependencies
                                 join task in db.Tasks on dependency.TaskId equals task.Id
                                 where dependency.DependsOnTaskId == id
@@ -103,10 +110,11 @@ internal static class TaskDependenciesEndpoints
             .ToListAsync(ct);
         return Results.Ok(dependents);
     }
-    private static async Task<IResult> Delete(Guid id, Guid dependencyId, [FromBody] DependencyVersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, CancellationToken ct)
+    private static async Task<IResult> Delete(Guid id, Guid dependencyId, [FromBody] DependencyVersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (task is null) return Problem("task-not-found", 404);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return Problem("task-forbidden", 403);
         if (!IsEditable(task)) return Problem("task-dependencies-read-only", 409);
         if (request.TaskVersion is not > 0 || request.TaskVersion != task.Version) return Problem("task-version-conflict", 409);
         var dependency = await db.TaskDependencies.SingleOrDefaultAsync(x => x.Id == dependencyId && x.TaskId == id, ct);

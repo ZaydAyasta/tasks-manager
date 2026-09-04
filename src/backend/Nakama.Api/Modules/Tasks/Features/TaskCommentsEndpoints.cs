@@ -8,6 +8,8 @@ using Nakama.Api.Modules.Activity.Domain;
 using Nakama.Api.Modules.Identity.Authentication;
 using Nakama.Api.Modules.Identity.Domain;
 using Nakama.Api.Modules.Tasks.Domain;
+using Nakama.Api.Modules.Notifications;
+using Nakama.Api.Modules.Notifications.Domain;
 
 namespace Nakama.Api.Modules.Tasks.Features;
 
@@ -32,11 +34,11 @@ internal static class TaskCommentsEndpoints
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == taskId, ct);
         return task is not null && await db.ProjectMembers.AnyAsync(x => x.ProjectId == task.ProjectId && x.UserId == current.UserId, ct) ? task : null;
     }
-    private static async Task<IResult> Create(Guid taskId, WriteTaskCommentRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activity, ICurrentUser current, CancellationToken ct)
+    private static async Task<IResult> Create(Guid taskId, WriteTaskCommentRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activity, INotificationWriter notifications, ICurrentUser current, CancellationToken ct)
     {
         var task = await AccessibleTask(taskId, db, current, ct); if (task is null) return Problem("comment-forbidden", "No puedes comentar en esta tarea.", 403);
         var author = await db.Users.SingleOrDefaultAsync(x => x.Id == current.UserId, ct); if (author is null || !author.IsActive) return Problem("comment-forbidden", "No puedes comentar en esta tarea.", 403);
-        try { var comment = TaskComment.Create(task.Id, current.UserId, request.Content ?? string.Empty, clock); db.TaskComments.Add(comment); activity.Record(task.ProjectId, task.Id, ActivityType.CommentAdded, new { commentId = comment.Id }); await db.SaveChangesAsync(ct); return Results.Created($"/api/tasks/{task.Id}/comments/{comment.Id}", Response(comment, author)); }
+        try { var comment = TaskComment.Create(task.Id, current.UserId, request.Content ?? string.Empty, clock); db.TaskComments.Add(comment); activity.Record(task.ProjectId, task.Id, ActivityType.CommentAdded, new { commentId = comment.Id }); var assignees = await db.TaskAssignees.Where(x => x.TaskId == task.Id).Select(x => x.UserId).ToListAsync(ct); await notifications.WriteAsync(assignees, current.UserId, NotificationType.CommentAdded, task.ProjectId, task.Id, new { taskTitle = task.Title }, ct); await db.SaveChangesAsync(ct); return Results.Created($"/api/tasks/{task.Id}/comments/{comment.Id}", Response(comment, author)); }
         catch (ArgumentException) { return Problem("comment-validation", "El comentario debe tener entre 1 y 4000 caracteres.", 400); }
     }
     private static async Task<IResult> List(Guid taskId, string? cursor, int? limit, NakamaDbContext db, ICurrentUser current, CancellationToken ct)

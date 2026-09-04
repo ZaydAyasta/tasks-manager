@@ -6,6 +6,7 @@ using Nakama.Api.Modules.Tasks.Domain;
 using Nakama.Api.Modules.Activity;
 using Nakama.Api.Modules.Activity.Domain;
 using Nakama.Api.Modules.Identity.Authentication;
+using Nakama.Api.Modules.Projects.Features;
 using DomainTaskStatus = Nakama.Api.Modules.Tasks.Domain.TaskStatus;
 
 namespace Nakama.Api.Modules.Tasks.Features;
@@ -36,10 +37,11 @@ internal static class SubtasksEndpoints
     private static IResult Problem(string type, int status) => Results.Problem(type: $"https://nakama/errors/{type}", statusCode: status);
     private static bool IsMutable(WorkTask task) => task.Status is DomainTaskStatus.Pending or DomainTaskStatus.InProgress or DomainTaskStatus.Blocked;
 
-    private static async Task<(WorkTask? Task, IResult? Error)> GetMutableTask(Guid taskId, long? version, NakamaDbContext db, CancellationToken ct)
+    private static async Task<(WorkTask? Task, IResult? Error)> GetMutableTask(Guid taskId, long? version, NakamaDbContext db, ICurrentUser currentUser, CancellationToken ct)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == taskId, ct);
         if (task is null) return (null, Problem("task-not-found", 404));
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return (null, Problem("task-forbidden", 403));
         if (!IsMutable(task)) return (null, Problem("task-subtasks-read-only", 409));
         if (version is not > 0 || version != task.Version) return (null, Problem("task-version-conflict", 409));
         return (task, null);
@@ -47,7 +49,7 @@ internal static class SubtasksEndpoints
 
     private static async Task<IResult> Create(Guid taskId, CreateSubtaskRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct)
     {
-        var result = await GetMutableTask(taskId, request.TaskVersion, db, ct);
+        var result = await GetMutableTask(taskId, request.TaskVersion, db, currentUser, ct);
         if (result.Error is not null) return result.Error;
         var task = result.Task!;
         var userId = currentUser.UserId;
@@ -73,18 +75,20 @@ internal static class SubtasksEndpoints
         catch (DbUpdateConcurrencyException) { return Problem("task-version-conflict", 409); }
     }
 
-    private static async Task<IResult> List(Guid taskId, NakamaDbContext db, CancellationToken ct)
+    private static async Task<IResult> List(Guid taskId, NakamaDbContext db, ICurrentUser currentUser, CancellationToken ct)
     {
-        if (!await db.Tasks.AnyAsync(x => x.Id == taskId, ct)) return Problem("task-not-found", 404);
+        var task = await db.Tasks.AsNoTracking().SingleOrDefaultAsync(x => x.Id == taskId, ct);
+        if (task is null) return Problem("task-not-found", 404);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return Problem("task-forbidden", 403);
         var subtasks = await db.Subtasks.AsNoTracking().Where(x => x.TaskId == taskId).OrderBy(x => x.Position).ToListAsync(ct);
         var userIds = subtasks.Select(x => x.CreatedByUserId).Concat(subtasks.Where(x => x.CompletedByUserId is not null).Select(x => x.CompletedByUserId!.Value)).Distinct();
         var users = await db.Users.Where(x => userIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
         return Results.Ok(subtasks.Select(subtask => new SubtaskResponse(subtask.Id, subtask.TaskId, subtask.Title, subtask.Position, subtask.IsCompleted, new(subtask.CreatedByUserId, users[subtask.CreatedByUserId].FullName), subtask.CreatedAt, subtask.CompletedByUserId is { } id ? new(id, users[id].FullName) : null, subtask.CompletedAt, subtask.UpdatedAt, null)));
     }
 
-    private static async Task<IResult> Update(Guid taskId, Guid id, UpdateSubtaskRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, CancellationToken ct)
+    private static async Task<IResult> Update(Guid taskId, Guid id, UpdateSubtaskRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct)
     {
-        var result = await GetMutableTask(taskId, request.TaskVersion, db, ct);
+        var result = await GetMutableTask(taskId, request.TaskVersion, db, currentUser, ct);
         if (result.Error is not null) return result.Error;
         var task = result.Task!;
         var subtask = await db.Subtasks.SingleOrDefaultAsync(x => x.Id == id && x.TaskId == taskId, ct);
@@ -107,7 +111,7 @@ internal static class SubtasksEndpoints
 
     private static async Task<IResult> Act(Guid taskId, Guid id, SubtaskActionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct, bool complete)
     {
-        var result = await GetMutableTask(taskId, request.TaskVersion, db, ct);
+        var result = await GetMutableTask(taskId, request.TaskVersion, db, currentUser, ct);
         if (result.Error is not null) return result.Error;
         var task = result.Task!;
         var userId = currentUser.UserId;
@@ -127,9 +131,9 @@ internal static class SubtasksEndpoints
         catch (DbUpdateConcurrencyException) { return Problem("task-version-conflict", 409); }
     }
 
-    private static async Task<IResult> Delete(Guid taskId, Guid id, [FromBody] SubtaskVersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, CancellationToken ct)
+    private static async Task<IResult> Delete(Guid taskId, Guid id, [FromBody] SubtaskVersionRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct)
     {
-        var result = await GetMutableTask(taskId, request.TaskVersion, db, ct);
+        var result = await GetMutableTask(taskId, request.TaskVersion, db, currentUser, ct);
         if (result.Error is not null) return result.Error;
         var task = result.Task!;
         var subtask = await db.Subtasks.SingleOrDefaultAsync(x => x.Id == id && x.TaskId == taskId, ct);
@@ -147,9 +151,9 @@ internal static class SubtasksEndpoints
         return Results.NoContent();
     }
 
-    private static async Task<IResult> Order(Guid taskId, ReorderSubtasksRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, CancellationToken ct)
+    private static async Task<IResult> Order(Guid taskId, ReorderSubtasksRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activities, ICurrentUser currentUser, CancellationToken ct)
     {
-        var result = await GetMutableTask(taskId, request.TaskVersion, db, ct);
+        var result = await GetMutableTask(taskId, request.TaskVersion, db, currentUser, ct);
         if (result.Error is not null) return result.Error;
         var task = result.Task!;
         var existing = await db.Subtasks.Where(x => x.TaskId == taskId).ToListAsync(ct);
