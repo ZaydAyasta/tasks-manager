@@ -1,10 +1,35 @@
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
 
-if (!configuredBaseUrl && import.meta.env.PROD) {
-  throw new Error('VITE_API_BASE_URL must be configured for a production build.')
+export function resolveApiBaseUrl(baseUrl, isProduction) {
+  if (!baseUrl) {
+    if (isProduction) {
+      throw new Error('VITE_API_BASE_URL must be configured for a production build.')
+    }
+
+    return 'http://localhost:5000'
+  }
+
+  const normalizedBaseUrl = baseUrl.replace(/\/$/, '')
+  if (!isProduction) {
+    return normalizedBaseUrl
+  }
+
+  let url
+  try {
+    url = new URL(normalizedBaseUrl)
+  } catch {
+    throw new Error('VITE_API_BASE_URL must be an absolute HTTPS URL for a production build.')
+  }
+
+  const isLoopbackHost = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(url.hostname)
+  if (url.protocol !== 'https:' || isLoopbackHost || url.username || url.password || url.search || url.hash) {
+    throw new Error('VITE_API_BASE_URL must be an absolute HTTPS URL without credentials, query, or fragment for a production build.')
+  }
+
+  return normalizedBaseUrl
 }
 
-const BASE_URL = (configuredBaseUrl || 'http://localhost:5000').replace(/\/$/, '')
+const BASE_URL = resolveApiBaseUrl(configuredBaseUrl, import.meta.env.PROD)
 
 export class ApiError extends Error {
   constructor(status, problem = {}) {
@@ -14,24 +39,36 @@ export class ApiError extends Error {
 }
 
 let tokenProvider = () => null
+let csrfTokenProvider = () => null
 let unauthorizedHandler = () => {}
 
-export const configureApi = ({ getToken, onUnauthorized }) => {
+export const configureApi = ({ getToken, getCsrfToken, onUnauthorized }) => {
   tokenProvider = getToken || tokenProvider
+  csrfTokenProvider = getCsrfToken || csrfTokenProvider
   unauthorizedHandler = onUnauthorized || unauthorizedHandler
 }
 
-export async function api(path, { method = 'GET', body, signal, headers = {} } = {}) {
+const isSafeMethod = method => ['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())
+const authenticationHeaders = method => {
   const token = tokenProvider()
+  const csrfToken = csrfTokenProvider()
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(!isSafeMethod(method) && csrfToken ? { 'X-Nakama-Csrf': csrfToken } : {})
+  }
+}
+
+export async function api(path, { method = 'GET', body, signal, headers = {} } = {}) {
   let response
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       method,
+      credentials: 'include',
       signal,
       headers: {
         Accept: 'application/json',
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authenticationHeaders(method),
         ...headers
       },
       body: body === undefined ? undefined : JSON.stringify(body)
@@ -52,16 +89,16 @@ export async function api(path, { method = 'GET', body, signal, headers = {} } =
 }
 
 export async function apiForm(path, formData, { method = 'POST', signal } = {}) {
-  const token = tokenProvider()
   let response
 
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       method,
+      credentials: 'include',
       signal,
       headers: {
         Accept: 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...authenticationHeaders(method)
       },
       body: formData
     })
@@ -81,13 +118,13 @@ export async function apiForm(path, formData, { method = 'POST', signal } = {}) 
 }
 
 export async function apiBlob(path, { signal } = {}) {
-  const token = tokenProvider()
   let response
 
   try {
     response = await fetch(`${BASE_URL}${path}`, {
+      credentials: 'include',
       signal,
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
+      headers: authenticationHeaders('GET')
     })
   } catch (error) {
     if (error.name === 'AbortError') throw error

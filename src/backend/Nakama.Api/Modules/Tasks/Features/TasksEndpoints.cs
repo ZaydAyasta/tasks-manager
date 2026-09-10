@@ -171,7 +171,7 @@ internal static class TasksEndpoints
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
-        if (!await db.ProjectMembers.AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == currentUser.UserId, ct)) return Problem("task-workflow-user-not-project-member", "El usuario no pertenece al proyecto.", 409);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return Problem("task-forbidden", "No tienes acceso a esta tarea.", 403);
         if (IsClosed(await db.Projects.SingleAsync(x => x.Id == task.ProjectId, ct))) return Problem("task-project-closed", "El proyecto está cerrado.", 409);
         if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
         var hasUnsatisfiedDependencies = await HasUnsatisfiedDependenciesAsync(id, db, ct);

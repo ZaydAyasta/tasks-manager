@@ -18,6 +18,21 @@ public sealed class RuntimeConfigurationTests
     }
 
     [Fact]
+    public void Production_rejects_a_jwt_signing_key_shorter_than_32_bytes()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Authentication:Jwt:SigningKey"] = "too-short",
+            ["Attachments:StoragePath"] = Path.GetTempPath()
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            RuntimeConfiguration.Validate(configuration, "Production"));
+
+        Assert.Contains("Authentication:Jwt:SigningKey", exception.Message);
+    }
+
+    [Fact]
     public void Production_rejects_a_missing_database_connection_or_cors_origin()
     {
         var missingDatabase = CreateConfiguration(new Dictionary<string, string?>
@@ -100,6 +115,47 @@ public sealed class RuntimeConfigurationTests
     }
 
     [Fact]
+    public void Production_rejects_an_http_cors_origin()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Authentication:Jwt:SigningKey"] = "test-signing-key-that-is-long-enough-for-validation",
+            ["Cors:AllowedOrigins:0"] = "http://nakama.internal",
+            ["Attachments:StoragePath"] = Path.GetTempPath()
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            RuntimeConfiguration.Validate(configuration, "Production"));
+
+        Assert.Contains("Cors:AllowedOrigins", exception.Message);
+    }
+
+    [Fact]
+    public void Production_rejects_missing_or_wildcard_allowed_hosts()
+    {
+        var missingHosts = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Authentication:Jwt:SigningKey"] = "test-signing-key-that-is-long-enough-for-validation",
+            ["Attachments:StoragePath"] = Path.GetTempPath(),
+            ["AllowedHosts"] = ""
+        });
+        var wildcardHosts = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Authentication:Jwt:SigningKey"] = "test-signing-key-that-is-long-enough-for-validation",
+            ["Attachments:StoragePath"] = Path.GetTempPath(),
+            ["AllowedHosts"] = "*"
+        });
+
+        var missingException = Assert.Throws<InvalidOperationException>(() =>
+            RuntimeConfiguration.Validate(missingHosts, "Production"));
+        var wildcardException = Assert.Throws<InvalidOperationException>(() =>
+            RuntimeConfiguration.Validate(wildcardHosts, "Production"));
+
+        Assert.Contains("AllowedHosts", missingException.Message);
+        Assert.Contains("AllowedHosts", wildcardException.Message);
+    }
+
+    [Fact]
     public void Production_rejects_a_missing_attachment_storage_path()
     {
         var configuration = CreateConfiguration(new Dictionary<string, string?>
@@ -145,6 +201,8 @@ public sealed class RuntimeConfigurationTests
         Assert.Equal("Nakama.Spa", settings.Jwt.Audience);
         Assert.Equal(new[] { "https://nakama.internal" }, settings.AllowedCorsOrigins);
         Assert.Equal(Path.GetTempPath(), settings.AttachmentStoragePath);
+        Assert.Equal(10, settings.LoginRateLimitPermitLimit);
+        Assert.Equal(TimeSpan.FromSeconds(60), settings.LoginRateLimitWindow);
     }
 
     [Fact]
@@ -161,6 +219,37 @@ public sealed class RuntimeConfigurationTests
         Assert.Equal("App_Data/attachments", settings.AttachmentStoragePath);
     }
 
+    [Fact]
+    public void Development_allows_an_http_localhost_cors_origin()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Authentication:Jwt:SigningKey"] = "test-signing-key-that-is-long-enough-for-validation",
+            ["Cors:AllowedOrigins:0"] = "http://localhost:5173",
+            ["Attachments:StoragePath"] = "App_Data/attachments"
+        });
+
+        var settings = RuntimeConfiguration.Validate(configuration, "Development");
+
+        Assert.Equal(new[] { "http://localhost:5173" }, settings.AllowedCorsOrigins);
+    }
+
+    [Fact]
+    public void Production_rejects_an_invalid_login_rate_limit_configuration()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Authentication:Jwt:SigningKey"] = "test-signing-key-that-is-long-enough-for-validation",
+            ["Authentication:LoginRateLimit:PermitLimit"] = "0",
+            ["Attachments:StoragePath"] = Path.GetTempPath()
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            RuntimeConfiguration.Validate(configuration, "Production"));
+
+        Assert.Contains("Authentication:LoginRateLimit", exception.Message);
+    }
+
     private static IConfiguration CreateConfiguration(IReadOnlyDictionary<string, string?>? overrides = null)
     {
         var values = new Dictionary<string, string?>
@@ -170,6 +259,7 @@ public sealed class RuntimeConfigurationTests
             ["Authentication:Jwt:Audience"] = "Nakama.Spa",
             ["Authentication:Jwt:AccessTokenMinutes"] = "60",
             ["Cors:AllowedOrigins:0"] = "https://nakama.internal",
+            ["AllowedHosts"] = "api.nakama.internal",
             ["Attachments:StoragePath"] = ""
         };
 

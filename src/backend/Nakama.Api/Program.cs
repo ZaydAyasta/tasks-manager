@@ -1,6 +1,7 @@
 using Nakama.Api.BuildingBlocks.Errors;
 using Nakama.Api.BuildingBlocks.Configuration;
 using Nakama.Api.BuildingBlocks.Persistence;
+using Nakama.Api.BuildingBlocks.Security;
 using Nakama.Api.BuildingBlocks.Time;
 using Nakama.Api.Modules.Activity;
 using Nakama.Api.Modules.Dashboard;
@@ -36,18 +37,31 @@ builder.Services.AddOpenApi();
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => policy
     .WithOrigins(runtimeSettings.AllowedCorsOrigins.ToArray())
     .AllowAnyHeader()
-    .AllowAnyMethod()));
+    .AllowAnyMethod()
+    .AllowCredentials()));
 var jwt = runtimeSettings.Jwt;
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options => options.TokenValidationParameters = new TokenValidationParameters
+    .AddJwtBearer(options =>
     {
-        ValidateIssuer = true, ValidIssuer = jwt.Issuer,
-        ValidateAudience = true, ValidAudience = jwt.Audience,
-        ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
-        ValidateLifetime = true, ClockSkew = TimeSpan.Zero,
-        NameClaimType = System.Security.Claims.ClaimTypes.Email,
-        RoleClaimType = System.Security.Claims.ClaimTypes.Role
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true, ValidIssuer = jwt.Issuer,
+            ValidateAudience = true, ValidAudience = jwt.Audience,
+            ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
+            ValidateLifetime = true, ClockSkew = TimeSpan.Zero,
+            NameClaimType = System.Security.Claims.ClaimTypes.Email,
+            RoleClaimType = System.Security.Claims.ClaimTypes.Role
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var cookieToken = context.Request.Cookies["nakama.access-token"];
+                if (!string.IsNullOrWhiteSpace(cookieToken)) context.Token = cookieToken;
+                return Task.CompletedTask;
+            }
+        };
     });
 builder.Services.AddAuthorization(options =>
 {
@@ -58,6 +72,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<IAuthorizationHandler, ActiveUserAuthorizationHandler>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+builder.Services.AddSingleton<ILoginRateLimiter>(new LoginRateLimiter(runtimeSettings.LoginRateLimitPermitLimit, runtimeSettings.LoginRateLimitWindow));
 
 builder.Services.AddIdentityModule();
 builder.Services.AddProjectsModule();
@@ -81,8 +96,10 @@ app.UseSerilogRequestLogging(options =>
     };
 });
 app.UseExceptionHandler();
+app.Use((context, next) => ApiResponseSecurity.ApplyAsync(context, next, app.Environment));
 app.UseCors("Frontend");
 app.UseAuthentication();
+app.Use(CsrfProtection.ValidateAsync);
 app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
@@ -90,6 +107,11 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = _ => false
+});
+app.MapHealthChecks("/health/ready");
 app.MapHealthChecks("/health");
 app.MapIdentityEndpoints();
 app.MapProjectsEndpoints();

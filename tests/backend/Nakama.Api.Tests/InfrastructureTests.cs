@@ -28,12 +28,16 @@ public sealed class InfrastructureTests(PostgresApiFactory factory)
     }
 
     [PostgresFact]
-    public async Task Health_endpoint_returns_success()
+    public async Task Liveness_readiness_and_backward_compatible_health_endpoints_return_success()
     {
         using var client = factory.CreateAnonymousClient();
 
-        var response = await client.GetAsync("/health");
+        var liveness = await client.GetAsync("/health/live");
+        var readiness = await client.GetAsync("/health/ready");
+        var health = await client.GetAsync("/health");
 
-        Assert.True(response.IsSuccessStatusCode);
+        Assert.True(liveness.IsSuccessStatusCode);
+        Assert.True(readiness.IsSuccessStatusCode);
+        Assert.True(health.IsSuccessStatusCode);
     }
 }

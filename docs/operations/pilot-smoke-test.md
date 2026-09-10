@@ -39,9 +39,14 @@ Ejecute este checklist después del despliegue, migraciones y backup verificado.
 25. Confirme que Dashboard se actualizó.
 26. Marque y desmarque estado leído/no leído de notificaciones según el flujo disponible.
 27. Descargue el adjunto autenticado.
-28. Compruebe las restricciones de permisos indicadas abajo.
+28. Compruebe `GET /health/live` y `GET /health/ready`.
+29. Compruebe las restricciones de permisos indicadas abajo.
 
 ## Smoke test de seguridad
+
+Con una cuenta de prueba, confirme en Production que el login crea la cookie `nakama.access-token` con `HttpOnly`, `Secure` y `SameSite=None`, y que el cuerpo de la respuesta no contiene un access token. Use la SPA para crear el proyecto de prueba y confirme que la mutación normal funciona; una repetición autenticada sin `X-Nakama-Csrf` debe devolver `403`.
+
+Con un Admin temporal, inicie sesión, cámbiele el rol a Collaborator desde otra sesión Admin y confirme que la sesión anterior recibe `403` al abrir `/api/admin/dashboard`. No reutilice una cuenta de administración real para esta prueba.
 
 Con un Collaborator autenticado, confirme que recibe `403` al intentar:
 

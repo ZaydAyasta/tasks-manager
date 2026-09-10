@@ -11,7 +11,7 @@ internal static class ListUserProjects
 
     private static async Task<IResult> HandleAsync(Guid userId, NakamaDbContext dbContext, ICurrentUser currentUser, CancellationToken cancellationToken)
     {
-        if (currentUser.Role != UserRole.Admin && currentUser.UserId != userId)
+        if (!await CurrentUserAccess.IsActiveAdminAsync(dbContext, currentUser, cancellationToken) && currentUser.UserId != userId)
             return ProjectEndpointHelpers.Problem("user-projects-forbidden", "No tienes acceso a los proyectos de este usuario.", StatusCodes.Status403Forbidden);
         if (!await dbContext.Users.AsNoTracking().AnyAsync(user => user.Id == userId, cancellationToken))
         {

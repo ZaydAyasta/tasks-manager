@@ -6,6 +6,7 @@ using Nakama.Api.Modules.Activity;
 using Nakama.Api.Modules.Activity.Domain;
 using Nakama.Api.Modules.Identity.Authentication;
 using Nakama.Api.Modules.Identity.Domain;
+using Nakama.Api.Modules.Projects.Features;
 using Nakama.Api.Modules.Tasks.Domain;
 using Nakama.Api.Modules.Tasks.Infrastructure;
 
@@ -18,8 +19,12 @@ internal static class TaskAttachmentsEndpoints
 {
     private static readonly Dictionary<string, string[]> Allowed = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["application/pdf"] = [".pdf"], ["image/png"] = [".png"], ["image/jpeg"] = [".jpg", ".jpeg"], ["text/plain"] = [".txt"],
-        ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] = [".docx"], ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] = [".xlsx"]
+        ["application/pdf"] = [".pdf"],
+        ["image/png"] = [".png"],
+        ["image/jpeg"] = [".jpg", ".jpeg"],
+        ["text/plain"] = [".txt"],
+        ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] = [".docx"],
+        ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] = [".xlsx"]
     };
     public static void MapEndpoints(IEndpointRouteBuilder app)
     {
@@ -33,7 +38,7 @@ internal static class TaskAttachmentsEndpoints
     private static async Task<WorkTask?> AccessibleTask(Guid taskId, NakamaDbContext db, ICurrentUser current, CancellationToken ct)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == taskId, ct);
-        return task is not null && await db.ProjectMembers.AnyAsync(x => x.ProjectId == task.ProjectId && x.UserId == current.UserId, ct) ? task : null;
+        return task is not null && await ProjectAccess.CanAccessAsync(db, task.ProjectId, current, ct) ? task : null;
     }
     private static async Task<IResult> Upload(Guid taskId, IFormFile? file, NakamaDbContext db, IClock clock, IActivityRecorder activity, ICurrentUser current, IAttachmentStorage storage, IOptions<AttachmentOptions> options, CancellationToken ct)
     {
@@ -70,7 +75,7 @@ internal static class TaskAttachmentsEndpoints
     private static async Task<IResult> Delete(Guid taskId, Guid attachmentId, NakamaDbContext db, IActivityRecorder activity, ICurrentUser current, IAttachmentStorage storage, CancellationToken ct)
     {
         var task = await AccessibleTask(taskId, db, current, ct); if (task is null) return Problem("attachment-forbidden", "No puedes eliminar archivos en esta tarea.", 403);
-        var attachment = await db.TaskAttachments.SingleOrDefaultAsync(x => x.Id == attachmentId && x.TaskId == taskId, ct); if (attachment is null) return Problem("attachment-not-found", "No existe el archivo.", 404); if (attachment.UploadedByUserId != current.UserId && current.Role != UserRole.Admin) return Problem("attachment-forbidden", "No puedes eliminar este archivo.", 403);
+        var attachment = await db.TaskAttachments.SingleOrDefaultAsync(x => x.Id == attachmentId && x.TaskId == taskId, ct); if (attachment is null) return Problem("attachment-not-found", "No existe el archivo.", 404); if (attachment.UploadedByUserId != current.UserId && !await CurrentUserAccess.IsActiveAdminAsync(db, current, ct)) return Problem("attachment-forbidden", "No puedes eliminar este archivo.", 403);
         try { await storage.DeleteAsync(attachment.StoredFileName, ct); } catch { return Problem("attachment-storage-failure", "No se pudo eliminar el archivo.", 500); }
         db.TaskAttachments.Remove(attachment); activity.Record(task.ProjectId, task.Id, ActivityType.AttachmentDeleted, new { attachmentId, fileName = attachment.OriginalFileName });
         try { await db.SaveChangesAsync(ct); return Results.NoContent(); } catch { return Problem("attachment-storage-failure", "No se pudo eliminar el registro del archivo.", 500); }

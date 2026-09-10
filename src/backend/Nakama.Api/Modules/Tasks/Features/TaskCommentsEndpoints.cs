@@ -7,6 +7,7 @@ using Nakama.Api.Modules.Activity;
 using Nakama.Api.Modules.Activity.Domain;
 using Nakama.Api.Modules.Identity.Authentication;
 using Nakama.Api.Modules.Identity.Domain;
+using Nakama.Api.Modules.Projects.Features;
 using Nakama.Api.Modules.Tasks.Domain;
 using Nakama.Api.Modules.Notifications;
 using Nakama.Api.Modules.Notifications.Domain;
@@ -32,7 +33,7 @@ internal static class TaskCommentsEndpoints
     private static async Task<WorkTask?> AccessibleTask(Guid taskId, NakamaDbContext db, ICurrentUser current, CancellationToken ct)
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == taskId, ct);
-        return task is not null && await db.ProjectMembers.AnyAsync(x => x.ProjectId == task.ProjectId && x.UserId == current.UserId, ct) ? task : null;
+        return task is not null && await ProjectAccess.CanAccessAsync(db, task.ProjectId, current, ct) ? task : null;
     }
     private static async Task<IResult> Create(Guid taskId, WriteTaskCommentRequest request, NakamaDbContext db, IClock clock, IActivityRecorder activity, INotificationWriter notifications, ICurrentUser current, CancellationToken ct)
     {
@@ -60,7 +61,7 @@ internal static class TaskCommentsEndpoints
     private static async Task<IResult> Delete(Guid taskId, Guid commentId, NakamaDbContext db, IActivityRecorder activity, ICurrentUser current, CancellationToken ct)
     {
         var task = await AccessibleTask(taskId, db, current, ct); if (task is null) return Problem("comment-forbidden", "No puedes eliminar comentarios en esta tarea.", 403);
-        var comment = await db.TaskComments.SingleOrDefaultAsync(x => x.Id == commentId && x.TaskId == taskId, ct); if (comment is null) return Problem("comment-not-found", "No existe el comentario.", 404); if (comment.AuthorUserId != current.UserId && current.Role != UserRole.Admin) return Problem("comment-forbidden", "No puedes eliminar este comentario.", 403);
+        var comment = await db.TaskComments.SingleOrDefaultAsync(x => x.Id == commentId && x.TaskId == taskId, ct); if (comment is null) return Problem("comment-not-found", "No existe el comentario.", 404); if (comment.AuthorUserId != current.UserId && !await CurrentUserAccess.IsActiveAdminAsync(db, current, ct)) return Problem("comment-forbidden", "No puedes eliminar este comentario.", 403);
         db.TaskComments.Remove(comment); activity.Record(task.ProjectId, task.Id, ActivityType.CommentDeleted, new { commentId }); await db.SaveChangesAsync(ct); return Results.NoContent();
     }
     private static TaskCommentResponse Response(TaskComment comment, User author) => new(comment.Id, comment.Content, new(author.Id, author.FullName), comment.CreatedAt, comment.UpdatedAt, comment.IsEdited);

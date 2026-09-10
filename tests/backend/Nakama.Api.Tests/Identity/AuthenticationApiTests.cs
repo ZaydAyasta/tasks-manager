@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Nakama.Api.Modules.Activity.Features;
 using Nakama.Api.Modules.Identity.Features;
+using Nakama.Api.Modules.Identity.Domain;
 using Nakama.Api.Modules.Projects.Features;
 using Nakama.Api.Modules.Tasks.Features;
 using Xunit;
@@ -19,6 +20,7 @@ public sealed class AuthenticationApiTests(PostgresApiFactory factory)
         using var client = await factory.CreateAuthenticatedClientAsync("admin@nakama.test", "AdminPassword1");
         var me = await client.GetFromJsonAsync<MeResponse>("/api/auth/me");
 
+        Assert.NotNull(login.AccessToken);
         Assert.NotEmpty(login.AccessToken);
         Assert.Equal("admin@nakama.test", login.User.Email);
         Assert.NotNull(me);
@@ -60,7 +62,7 @@ public sealed class AuthenticationApiTests(PostgresApiFactory factory)
     }
 
     [PostgresFact]
-    public async Task Collaborator_member_can_run_workflow_while_outsider_is_rejected_and_activity_uses_authenticated_actor()
+    public async Task Collaborator_member_can_run_workflow_while_outsider_is_forbidden_and_activity_uses_authenticated_actor()
     {
         await factory.ResetDatabaseAsync();
         using var admin = await factory.CreateAdminClientAsync();
@@ -81,8 +83,80 @@ public sealed class AuthenticationApiTests(PostgresApiFactory factory)
         var feed = await admin.GetFromJsonAsync<ActivityFeedResponse>($"/api/tasks/{task.Id}/activity");
 
         Assert.Equal(HttpStatusCode.NoContent, allowed.StatusCode);
-        Assert.Equal(HttpStatusCode.Conflict, rejected.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
         Assert.Contains(feed!.Items, item => item.ActivityType == "TaskStarted" && item.Actor.Id == collaboratorUser.Id);
+    }
+
+    [PostgresFact]
+    public async Task Admin_can_run_admin_workflow_for_a_project_without_membership()
+    {
+        await factory.ResetDatabaseAsync();
+        using var creator = await factory.CreateAdminClientAsync();
+        var anotherAdmin = await factory.CreateUserAsync(creator, "workflow-admin@nakama.test", UserRole.Admin);
+        var project = await CreateProjectAsync(creator);
+        var stage = (await (await creator.PostAsJsonAsync($"/api/projects/{project.Id}/stages", new { name = "Build" })).Content.ReadFromJsonAsync<StageResponse>())!;
+        var task = (await (await creator.PostAsJsonAsync($"/api/projects/{project.Id}/tasks", new { stageId = stage.Id, title = "Admin workflow", priority = "Medium" })).Content.ReadFromJsonAsync<TaskResponse>())!;
+        using var adminWithoutMembership = await factory.CreateAuthenticatedClientAsync(anotherAdmin.Email, PostgresApiFactory.DefaultPassword);
+
+        var started = await adminWithoutMembership.PostAsJsonAsync($"/api/tasks/{task.Id}/start", new { version = task.Version });
+        task = (await creator.GetFromJsonAsync<TaskResponse>($"/api/tasks/{task.Id}"))!;
+        var submitted = await adminWithoutMembership.PostAsJsonAsync($"/api/tasks/{task.Id}/submit-review", new { version = task.Version });
+        task = (await creator.GetFromJsonAsync<TaskResponse>($"/api/tasks/{task.Id}"))!;
+        var completed = await adminWithoutMembership.PostAsJsonAsync($"/api/tasks/{task.Id}/complete", new { version = task.Version });
+
+        Assert.Equal(HttpStatusCode.NoContent, started.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, submitted.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, completed.StatusCode);
+    }
+
+    [PostgresFact]
+    public async Task Demoted_admin_token_loses_global_project_access_on_the_next_request()
+    {
+        await factory.ResetDatabaseAsync();
+        using var admin = await factory.CreateAdminClientAsync();
+        var demotedAdmin = await factory.CreateUserAsync(admin, "demoted-admin@nakama.test", UserRole.Admin);
+        var project = await CreateProjectAsync(admin);
+        using var staleToken = await factory.CreateAuthenticatedClientAsync(demotedAdmin.Email, PostgresApiFactory.DefaultPassword);
+
+        Assert.Equal(HttpStatusCode.OK, (await staleToken.GetAsync($"/api/projects/{project.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await admin.PutAsJsonAsync($"/api/users/{demotedAdmin.Id}/role", new { role = "Collaborator" })).StatusCode);
+
+        var detailAfterDemotion = await staleToken.GetAsync($"/api/projects/{project.Id}");
+        var listAfterDemotion = await staleToken.GetFromJsonAsync<List<ProjectListItemResponse>>("/api/projects");
+        var dashboardAfterDemotion = await staleToken.GetAsync("/api/admin/dashboard");
+
+        Assert.Equal(HttpStatusCode.Forbidden, detailAfterDemotion.StatusCode);
+        Assert.DoesNotContain(listAfterDemotion!, item => item.Id == project.Id);
+        Assert.Equal(HttpStatusCode.Forbidden, dashboardAfterDemotion.StatusCode);
+    }
+
+    [PostgresFact]
+    public async Task Login_returns_429_after_the_configured_limit_for_the_same_account_and_origin()
+    {
+        await factory.ResetDatabaseAsync();
+        using var anonymous = factory.CreateAnonymousClient();
+
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var response = await anonymous.PostAsJsonAsync("/api/auth/login", new { email = "rate-limit@nakama.test", password = "wrong" });
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        var limited = await anonymous.PostAsJsonAsync("/api/auth/login", new { email = "rate-limit@nakama.test", password = "wrong" });
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+    }
+
+    [PostgresFact]
+    public async Task Authenticated_unsafe_requests_require_the_csrf_token()
+    {
+        await factory.ResetDatabaseAsync();
+        using var admin = factory.CreateClient();
+        admin.DefaultRequestHeaders.Remove("X-Nakama-Csrf");
+
+        var response = await admin.PostAsJsonAsync("/api/projects", new { name = "CSRF protection" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [PostgresFact]

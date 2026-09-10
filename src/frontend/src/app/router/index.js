@@ -37,7 +37,7 @@ export const resolveNavigation = (to, auth) => {
 const router = createRouter({ history: createWebHistory(), routes })
 router.beforeEach(async to => {
   const auth = useAuthStore()
-  if (!auth.accessToken && localStorage.getItem('nakama.access-token')) {
+  if (!auth.sessionChecked) {
     await auth.restoreSession()
   }
   return resolveNavigation(to, auth)

@@ -24,7 +24,7 @@ internal static class ListProjects
         }
 
         var query = dbContext.Projects.AsNoTracking();
-        if (currentUser.Role != UserRole.Admin)
+        if (!await CurrentUserAccess.IsActiveAdminAsync(dbContext, currentUser, cancellationToken))
             query = query.Where(project => dbContext.ProjectMembers.Any(member => member.ProjectId == project.Id && member.UserId == currentUser.UserId));
         if (parsedStatus is { } projectStatus)
         {

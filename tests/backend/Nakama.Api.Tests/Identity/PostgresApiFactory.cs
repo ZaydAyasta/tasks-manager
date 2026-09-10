@@ -16,7 +16,7 @@ using Nakama.Api.Modules.Identity.Features;
 
 namespace Nakama.Api.Tests.Identity;
 
-public sealed class PostgresApiFactory : WebApplicationFactory<Program>
+public class PostgresApiFactory : WebApplicationFactory<Program>
 {
     public const string DefaultPassword = "Password1";
     private const string AdminEmail = "admin@nakama.test";
@@ -29,22 +29,32 @@ public sealed class PostgresApiFactory : WebApplicationFactory<Program>
     private readonly string attachmentStoragePath = Path.Combine(Path.GetTempPath(), "nakama-api-tests", Guid.NewGuid().ToString("N"));
     private Guid adminId;
 
+    protected virtual string EnvironmentName => "Development";
+
     public PostgresApiFactory() => testConnectionString = PostgresTestSettings.ConnectionString;
 
     public bool HasTestDatabase => !string.IsNullOrWhiteSpace(testConnectionString);
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Development");
+        builder.UseEnvironment(EnvironmentName);
         builder.UseSetting("Authentication:Jwt:Issuer", JwtIssuer);
         builder.UseSetting("Authentication:Jwt:Audience", JwtAudience);
         builder.UseSetting("Authentication:Jwt:SigningKey", JwtSigningKey);
+        builder.UseSetting("Authentication:Jwt:AccessTokenMinutes", "60");
+        builder.UseSetting("ConnectionStrings:NakamaDatabase", testConnectionString ?? string.Empty);
+        builder.UseSetting("Cors:AllowedOrigins:0", EnvironmentName == "Production" ? "https://nakama.test" : "http://localhost:5173");
+        builder.UseSetting("AllowedHosts", "localhost");
+        builder.UseSetting("Attachments:StoragePath", attachmentStoragePath);
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ConnectionStrings:NakamaDatabase"] = testConnectionString,
             ["Authentication:Jwt:Issuer"] = JwtIssuer,
             ["Authentication:Jwt:Audience"] = JwtAudience,
             ["Authentication:Jwt:SigningKey"] = JwtSigningKey,
+            ["Authentication:Jwt:AccessTokenMinutes"] = "60",
+            ["Cors:AllowedOrigins:0"] = EnvironmentName == "Production" ? "https://nakama.test" : "http://localhost:5173",
+            ["AllowedHosts"] = "localhost",
             ["DevelopmentBootstrap:Admin:Email"] = string.Empty,
             ["DevelopmentBootstrap:Admin:Password"] = string.Empty
             , ["Attachments:StoragePath"] = attachmentStoragePath
@@ -93,10 +103,12 @@ public sealed class PostgresApiFactory : WebApplicationFactory<Program>
         var admin = db.Users.Single(user => user.Id == adminId);
         var token = scope.ServiceProvider.GetRequiredService<IJwtTokenService>().Create(admin);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
+        client.DefaultRequestHeaders.Add("X-Nakama-Csrf", token.CsrfToken);
         return client;
     }
 
-    public HttpClient CreateAnonymousClient() => base.CreateClient();
+    public HttpClient CreateAnonymousClient(WebApplicationFactoryClientOptions? options = null) =>
+        base.CreateClient(options ?? new WebApplicationFactoryClientOptions());
 
     public async Task<UserDetailResponse> CreateUserAsync(HttpClient adminClient, string email, UserRole role = UserRole.Collaborator, string? password = null, string? fullName = null)
     {
@@ -113,12 +125,12 @@ public sealed class PostgresApiFactory : WebApplicationFactory<Program>
         return (await response.Content.ReadFromJsonAsync<LoginResponse>())!;
     }
 
-    public async Task<string> GetTokenAsync(string email, string password) => (await LoginAsync(email, password)).AccessToken;
-
     public async Task<HttpClient> CreateAuthenticatedClientAsync(string email, string password)
     {
         var client = CreateAnonymousClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await GetTokenAsync(email, password));
+        var login = await LoginAsync(email, password);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken!);
+        client.DefaultRequestHeaders.Add("X-Nakama-Csrf", login.CsrfToken);
         return client;
     }
 
@@ -136,4 +148,9 @@ public sealed class PostgresApiFactory : WebApplicationFactory<Program>
         base.Dispose(disposing);
         if (disposing && Directory.Exists(attachmentStoragePath)) Directory.Delete(attachmentStoragePath, true);
     }
+}
+
+public sealed class ProductionPostgresApiFactory : PostgresApiFactory
+{
+    protected override string EnvironmentName => "Production";
 }

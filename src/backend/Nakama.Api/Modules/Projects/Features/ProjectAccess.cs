@@ -9,7 +9,8 @@ internal static class ProjectAccess
 {
     public static async Task<bool> CanAccessAsync(NakamaDbContext dbContext, Guid projectId, ICurrentUser currentUser, CancellationToken cancellationToken)
     {
-        return currentUser.Role == UserRole.Admin || await dbContext.ProjectMembers.AsNoTracking()
-            .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUser.UserId, cancellationToken);
+        return await CurrentUserAccess.IsActiveAdminAsync(dbContext, currentUser, cancellationToken)
+            || await dbContext.ProjectMembers.AsNoTracking()
+                .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUser.UserId, cancellationToken);
     }
 }

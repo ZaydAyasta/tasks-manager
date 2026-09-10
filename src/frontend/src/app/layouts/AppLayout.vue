@@ -23,8 +23,8 @@ function notificationBadge(count) {
   return count > 9 ? '9+' : String(count)
 }
 
-function logout() {
-  auth.logout()
+async function logout() {
+  await auth.logout()
   notificationsStore.reset()
   router.push('/login')
 }

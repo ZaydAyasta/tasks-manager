@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using Nakama.Api.Modules.Activity.Features;
+using Nakama.Api.Modules.Identity.Domain;
 using Nakama.Api.Modules.Identity.Features;
 using Nakama.Api.Modules.Projects.Features;
 using Nakama.Api.Modules.Tasks.Features;
@@ -14,6 +15,52 @@ namespace Nakama.Api.Tests.Tasks;
 [Collection(PostgresCollection.Name)]
 public sealed class TaskCollaborationApiTests(PostgresApiFactory factory)
 {
+    [PostgresFact]
+    public async Task Active_admin_without_project_membership_can_manage_comments_and_attachments()
+    {
+        await factory.ResetDatabaseAsync();
+        using var projectAdmin = await factory.CreateAdminClientAsync();
+        var collaborator = await factory.CreateUserAsync(projectAdmin, "collaboration-member@nakama.test");
+        var externalAdmin = await factory.CreateUserAsync(
+            projectAdmin,
+            "collaboration-admin@nakama.test",
+            UserRole.Admin);
+        var setup = await Setup(projectAdmin, collaborator.Id);
+        using var collaboratorClient = await factory.CreateAuthenticatedClientAsync(
+            collaborator.Email,
+            PostgresApiFactory.DefaultPassword);
+        using var adminOutsideProject = await factory.CreateAuthenticatedClientAsync(
+            externalAdmin.Email,
+            PostgresApiFactory.DefaultPassword);
+
+        var commentResponse = await collaboratorClient.PostAsJsonAsync(
+            $"/api/tasks/{setup.Task.Id}/comments",
+            new { content = "Comentario para revisión administrativa" });
+        var comment = (await commentResponse.Content.ReadFromJsonAsync<TaskCommentResponse>())!;
+        using var upload = Form("evidence.txt", "text/plain", "safe content");
+        var attachmentResponse = await collaboratorClient.PostAsync(
+            $"/api/tasks/{setup.Task.Id}/attachments",
+            upload);
+        var attachment = (await attachmentResponse.Content.ReadFromJsonAsync<TaskAttachmentResponse>())!;
+
+        var comments = await adminOutsideProject.GetFromJsonAsync<TaskCommentFeedResponse>(
+            $"/api/tasks/{setup.Task.Id}/comments");
+        var download = await adminOutsideProject.GetAsync(
+            $"/api/tasks/{setup.Task.Id}/attachments/{attachment.Id}/download");
+        var deleteComment = await adminOutsideProject.DeleteAsync(
+            $"/api/tasks/{setup.Task.Id}/comments/{comment.Id}");
+        var deleteAttachment = await adminOutsideProject.DeleteAsync(
+            $"/api/tasks/{setup.Task.Id}/attachments/{attachment.Id}");
+
+        Assert.Equal(HttpStatusCode.Created, commentResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, attachmentResponse.StatusCode);
+        Assert.Contains(comments!.Items, item => item.Id == comment.Id);
+        Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        Assert.Equal("safe content", await download.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.NoContent, deleteComment.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, deleteAttachment.StatusCode);
+    }
+
     [PostgresFact]
     public async Task Comments_trim_enforce_ownership_paginate_and_record_activity()
     {

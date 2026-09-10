@@ -2,19 +2,97 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api, configureApi } from '../services/api'
 
-const TOKEN_KEY = 'nakama.access-token' // MVP temporal: JWT en localStorage hasta que el backend soporte cookies HttpOnly/refresh.
-
 export const useAuthStore = defineStore('auth', () => {
-  const user = ref(null); const accessToken = ref(null); const isLoading = ref(false)
-  const isAuthenticated = computed(() => Boolean(accessToken.value && user.value))
+  const user = ref(null)
+  const accessToken = ref(null)
+  const csrfToken = ref(null)
+  const isLoading = ref(false)
+  const sessionChecked = ref(false)
+
+  const isAuthenticated = computed(() => Boolean(user.value))
   const isAdmin = computed(() => user.value?.role === 'Admin')
   const isCollaborator = computed(() => user.value?.role === 'Collaborator')
-  const clear = () => { accessToken.value = null; user.value = null; localStorage.removeItem(TOKEN_KEY) }
-  const logout = () => clear()
-  const setSession = (token, currentUser) => { accessToken.value = token; user.value = currentUser; localStorage.setItem(TOKEN_KEY, token) }
-  async function login(credentials) { isLoading.value = true; try { const result = await api('/api/auth/login', { method: 'POST', body: credentials }); setSession(result.accessToken, result.user); return result.user } finally { isLoading.value = false } }
-  async function loadCurrentUser() { const current = await api('/api/auth/me'); user.value = current; return current }
-  async function restoreSession() { const token = localStorage.getItem(TOKEN_KEY); if (!token) return false; accessToken.value = token; isLoading.value = true; try { await loadCurrentUser(); return true } catch (error) { if (error.status === 401) clear(); else throw error; return false } finally { isLoading.value = false } }
-  configureApi({ getToken: () => accessToken.value, onUnauthorized: clear })
-  return { user, accessToken, isLoading, isAuthenticated, isAdmin, isCollaborator, login, logout, loadCurrentUser, restoreSession, clear }
+
+  const clear = () => {
+    accessToken.value = null
+    csrfToken.value = null
+    user.value = null
+    sessionChecked.value = true
+  }
+
+  const setSession = (token, csrf, currentUser) => {
+    accessToken.value = token || null
+    csrfToken.value = csrf
+    user.value = currentUser
+    sessionChecked.value = true
+  }
+
+  async function login(credentials) {
+    isLoading.value = true
+
+    try {
+      const result = await api('/api/auth/login', { method: 'POST', body: credentials })
+      setSession(result.accessToken, result.csrfToken, result.user)
+      return result.user
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function loadCurrentUser() {
+    const current = await api('/api/auth/me')
+    const { csrfToken: currentCsrfToken, ...currentUser } = current
+
+    setSession(accessToken.value, currentCsrfToken, currentUser)
+    return currentUser
+  }
+
+  async function restoreSession() {
+    if (sessionChecked.value) return isAuthenticated.value
+
+    isLoading.value = true
+
+    try {
+      await loadCurrentUser()
+      return true
+    } catch (error) {
+      if (error.status === 401) {
+        clear()
+        return false
+      }
+
+      throw error
+    } finally {
+      sessionChecked.value = true
+      isLoading.value = false
+    }
+  }
+
+  async function logout() {
+    try {
+      if (isAuthenticated.value) {
+        await api('/api/auth/logout', { method: 'POST' })
+      }
+    } finally {
+      clear()
+    }
+  }
+
+  configureApi({ getToken: () => accessToken.value, getCsrfToken: () => csrfToken.value, onUnauthorized: clear })
+
+  return {
+    user,
+    accessToken,
+    csrfToken,
+    isLoading,
+    sessionChecked,
+    isAuthenticated,
+    isAdmin,
+    isCollaborator,
+    login,
+    logout,
+    loadCurrentUser,
+    restoreSession,
+    clear
+  }
 })
