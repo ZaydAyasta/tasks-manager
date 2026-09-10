@@ -81,7 +81,7 @@ builder.Services.AddSingleton<ILoginRateLimiter>(new LoginRateLimiter(runtimeSet
 
 builder.Services.AddIdentityModule();
 builder.Services.AddProjectsModule();
-builder.Services.AddTasksModule();
+builder.Services.AddTasksModule(runtimeSettings.Attachments);
 builder.Services.AddNotificationsModule();
 builder.Services.AddActivityModule();
 builder.Services.AddDashboardModule();

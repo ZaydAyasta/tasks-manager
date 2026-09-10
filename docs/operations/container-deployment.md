@@ -8,8 +8,8 @@ Este MVP se ejecuta como instalaciones aisladas, no como multi-tenancy dentro de
 
 | Instalación | Componentes aislados |
 | --- | --- |
-| Empresa | Nakama Web A, Nakama API A, PostgreSQL A, volumen Attachments A y secretos A |
-| Universidad | Nakama Web B, Nakama API B, PostgreSQL B, volumen Attachments B y secretos B |
+| Empresa | Nakama Web A, Nakama API A, PostgreSQL A, storage de attachments A y secretos A |
+| Universidad | Nakama Web B, Nakama API B, PostgreSQL B, storage de attachments B y secretos B |
 
 No mezcle Empresa y Universidad en una misma base de datos o volumen mientras no existan Workspaces. Este cambio no implementa Workspaces.
 
@@ -29,7 +29,12 @@ Configure en el host de la API:
 | `Authentication__Jwt__AccessTokenMinutes` | `60` |
 | `Cors__AllowedOrigins__0` | `https://nakama.example.com` |
 | `AllowedHosts` | `api.nakama.example.com` |
-| `Attachments__StoragePath` | `/data/attachments` |
+| `Attachments__Provider` | `Local` o `S3` |
+| `Attachments__StoragePath` | `/data/attachments` (sólo `Local`) |
+| `Attachments__S3__ServiceUrl` | URL HTTPS del endpoint S3-compatible (sólo `S3`) |
+| `Attachments__S3__BucketName` | bucket privado (sólo `S3`) |
+| `Attachments__S3__AccessKeyId` / `Attachments__S3__SecretAccessKey` | credenciales server-side (sólo `S3`) |
+| `Attachments__S3__Region` | región del proveedor; para R2, `auto` |
 
 Genere la clave JWT localmente sin guardarla en el repositorio:
 
@@ -47,7 +52,7 @@ Construya la API desde la raíz del repositorio:
 docker build -f src/backend/Nakama.Api/Dockerfile -t nakama-api:latest .
 ```
 
-La API escucha en `0.0.0.0:$PORT` cuando el host inyecta `PORT`; si no existe, la imagen usa el puerto 8080. Monte un volumen persistente en `/data/attachments` y configure `Attachments__StoragePath=/data/attachments`.
+La API escucha en `0.0.0.0:$PORT` cuando el host inyecta `PORT`; si no existe, la imagen usa el puerto 8080. Para `Attachments__Provider=Local`, monte un volumen persistente en `/data/attachments` y configure `Attachments__StoragePath=/data/attachments`. Para `S3`, no dependa del filesystem del contenedor: consulte [Cloudflare R2](cloudflare-r2.md).
 
 Construya el frontend de forma independiente:
 
@@ -83,4 +88,4 @@ Configure los dominios, TLS y proxy externo. El proxy debe conservar cookies, cu
 
 ## Backups
 
-Un backup completo siempre incluye PostgreSQL **y** el volumen de attachments. Consulte [backup y restore](backup-restore.md): incluye `pg_dump`, restore aislado, snapshot/copia del volumen y validación periódica de una restauración. Un dump de DB sin adjuntos no es un backup completo de Nakama.
+Un backup completo siempre incluye PostgreSQL **y** los objetos de attachments. Consulte [backup y restore](backup-restore.md): incluye `pg_dump`, restore aislado, copia de volumen o bucket y validación periódica de una restauración. Un dump de DB sin adjuntos no es un backup completo de Nakama.

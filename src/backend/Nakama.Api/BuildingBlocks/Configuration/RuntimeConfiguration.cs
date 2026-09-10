@@ -1,4 +1,5 @@
 using Nakama.Api.Modules.Identity.Authentication;
+using Nakama.Api.Modules.Tasks.Infrastructure;
 using Microsoft.Extensions.Hosting;
 using System.Text;
 
@@ -8,7 +9,7 @@ public sealed record RuntimeSettings(
     string ConnectionString,
     JwtOptions Jwt,
     IReadOnlyList<string> AllowedCorsOrigins,
-    string AttachmentStoragePath,
+    AttachmentOptions Attachments,
     int LoginRateLimitPermitLimit,
     TimeSpan LoginRateLimitWindow);
 
@@ -68,13 +69,29 @@ public static class RuntimeConfiguration
             }
         }
 
-        var storagePath = configuration["Attachments:StoragePath"];
-        RequireValue(storagePath, "Attachments:StoragePath");
-
-        if (!string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase)
-            && !Path.IsPathRooted(storagePath))
+        var attachments = configuration.GetSection(AttachmentOptions.SectionName).Get<AttachmentOptions>() ?? new AttachmentOptions();
+        if (!string.Equals(attachments.Provider, "Local", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(attachments.Provider, "S3", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Attachments:StoragePath must be an absolute persistent path outside Development.");
+            throw new InvalidOperationException("Attachments:Provider must be Local or S3.");
+        }
+
+        if (string.Equals(attachments.Provider, "S3", StringComparison.OrdinalIgnoreCase))
+        {
+            RequireAbsoluteHttpsUri(attachments.S3.ServiceUrl, "Attachments:S3:ServiceUrl");
+            RequireValue(attachments.S3.BucketName, "Attachments:S3:BucketName");
+            RequireValue(attachments.S3.AccessKeyId, "Attachments:S3:AccessKeyId");
+            RequireValue(attachments.S3.SecretAccessKey, "Attachments:S3:SecretAccessKey");
+            RequireValue(attachments.S3.Region, "Attachments:S3:Region");
+        }
+        else
+        {
+            RequireValue(attachments.StoragePath, "Attachments:StoragePath");
+            if (!string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase)
+                && !Path.IsPathRooted(attachments.StoragePath))
+            {
+                throw new InvalidOperationException("Attachments:StoragePath must be an absolute persistent path outside Development.");
+            }
         }
 
         var loginRateLimitPermitLimit = configuration.GetValue<int?>("Authentication:LoginRateLimit:PermitLimit") ?? 10;
@@ -84,7 +101,7 @@ public static class RuntimeConfiguration
             throw new InvalidOperationException("Authentication:LoginRateLimit must define PermitLimit between 1 and 100 and WindowSeconds between 1 and 3600.");
         }
 
-        return new RuntimeSettings(connectionString!, jwt, allowedOrigins, storagePath!, loginRateLimitPermitLimit, TimeSpan.FromSeconds(loginRateLimitWindowSeconds));
+        return new RuntimeSettings(connectionString!, jwt, allowedOrigins, attachments, loginRateLimitPermitLimit, TimeSpan.FromSeconds(loginRateLimitWindowSeconds));
     }
 
     private static bool IsHttpOrigin(string origin) => Uri.TryCreate(origin, UriKind.Absolute, out var uri)
@@ -96,6 +113,15 @@ public static class RuntimeConfiguration
         if (string.IsNullOrWhiteSpace(value))
         {
             throw new InvalidOperationException($"{settingName} must be configured through environment variables or secure configuration.");
+        }
+    }
+
+    private static void RequireAbsoluteHttpsUri(string? value, string settingName)
+    {
+        RequireValue(value, settingName);
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new InvalidOperationException($"{settingName} must be an absolute HTTPS URL.");
         }
     }
 }

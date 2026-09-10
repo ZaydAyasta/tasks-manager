@@ -48,7 +48,7 @@ internal static class TaskAttachmentsEndpoints
         if (file.Length > options.Value.MaxFileSizeBytes) return Problem("attachment-file-too-large", "El archivo supera el tamaño máximo permitido.", 400);
         var original = Path.GetFileName(file.FileName); var extension = Path.GetExtension(original); if (string.IsNullOrWhiteSpace(original) || !Allowed.TryGetValue(file.ContentType, out var extensions) || !extensions.Contains(extension, StringComparer.OrdinalIgnoreCase)) return Problem("attachment-file-type-not-allowed", "Este tipo de archivo no está permitido.", 400);
         var stored = $"{Guid.NewGuid():N}{extension.ToLowerInvariant()}";
-        try { await using var input = file.OpenReadStream(); await storage.SaveAsync(stored, input, ct); }
+        try { await using var input = file.OpenReadStream(); await storage.SaveAsync(stored, input, ct, file.ContentType); }
         catch { return Problem("attachment-storage-failure", "No se pudo guardar el archivo.", 500); }
         try
         {

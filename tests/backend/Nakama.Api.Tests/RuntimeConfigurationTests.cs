@@ -200,7 +200,8 @@ public sealed class RuntimeConfigurationTests
         Assert.Equal("Nakama.Api", settings.Jwt.Issuer);
         Assert.Equal("Nakama.Spa", settings.Jwt.Audience);
         Assert.Equal(new[] { "https://nakama.internal" }, settings.AllowedCorsOrigins);
-        Assert.Equal(Path.GetTempPath(), settings.AttachmentStoragePath);
+        Assert.Equal("Local", settings.Attachments.Provider);
+        Assert.Equal(Path.GetTempPath(), settings.Attachments.StoragePath);
         Assert.Equal(10, settings.LoginRateLimitPermitLimit);
         Assert.Equal(TimeSpan.FromSeconds(60), settings.LoginRateLimitWindow);
     }
@@ -216,7 +217,7 @@ public sealed class RuntimeConfigurationTests
 
         var settings = RuntimeConfiguration.Validate(configuration, "Development");
 
-        Assert.Equal("App_Data/attachments", settings.AttachmentStoragePath);
+        Assert.Equal("App_Data/attachments", settings.Attachments.StoragePath);
     }
 
     [Fact]
@@ -248,6 +249,62 @@ public sealed class RuntimeConfigurationTests
             RuntimeConfiguration.Validate(configuration, "Production"));
 
         Assert.Contains("Authentication:LoginRateLimit", exception.Message);
+    }
+
+    [Fact]
+    public void Production_accepts_s3_attachments_without_a_local_storage_path()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Authentication:Jwt:SigningKey"] = "test-signing-key-that-is-long-enough-for-validation",
+            ["Attachments:Provider"] = "S3",
+            ["Attachments:StoragePath"] = "",
+            ["Attachments:S3:ServiceUrl"] = "https://account.r2.cloudflarestorage.com",
+            ["Attachments:S3:BucketName"] = "nakama-attachments",
+            ["Attachments:S3:AccessKeyId"] = "access-key",
+            ["Attachments:S3:SecretAccessKey"] = "secret-key",
+            ["Attachments:S3:Region"] = "auto"
+        });
+
+        var settings = RuntimeConfiguration.Validate(configuration, "Production");
+
+        Assert.Equal("S3", settings.Attachments.Provider);
+        Assert.Equal("nakama-attachments", settings.Attachments.S3.BucketName);
+    }
+
+    [Fact]
+    public void Production_rejects_incomplete_s3_attachment_configuration()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Authentication:Jwt:SigningKey"] = "test-signing-key-that-is-long-enough-for-validation",
+            ["Attachments:Provider"] = "S3",
+            ["Attachments:StoragePath"] = "",
+            ["Attachments:S3:ServiceUrl"] = "https://account.r2.cloudflarestorage.com",
+            ["Attachments:S3:BucketName"] = "",
+            ["Attachments:S3:AccessKeyId"] = "access-key",
+            ["Attachments:S3:SecretAccessKey"] = "secret-key",
+            ["Attachments:S3:Region"] = "auto"
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => RuntimeConfiguration.Validate(configuration, "Production"));
+
+        Assert.Contains("Attachments:S3:BucketName", exception.Message);
+    }
+
+    [Fact]
+    public void Production_rejects_an_unknown_attachment_provider()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Authentication:Jwt:SigningKey"] = "test-signing-key-that-is-long-enough-for-validation",
+            ["Attachments:Provider"] = "Filesystem",
+            ["Attachments:StoragePath"] = Path.GetTempPath()
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => RuntimeConfiguration.Validate(configuration, "Production"));
+
+        Assert.Contains("Attachments:Provider", exception.Message);
     }
 
     private static IConfiguration CreateConfiguration(IReadOnlyDictionary<string, string?>? overrides = null)

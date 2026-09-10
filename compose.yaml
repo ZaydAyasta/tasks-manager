@@ -22,6 +22,7 @@ services:
       Authentication__Jwt__AccessTokenMinutes: ${Authentication__Jwt__AccessTokenMinutes:?set Authentication__Jwt__AccessTokenMinutes in .env}
       Cors__AllowedOrigins__0: ${Cors__AllowedOrigins__0:?set Cors__AllowedOrigins__0 in .env}
       AllowedHosts: ${AllowedHosts:?set AllowedHosts in .env}
+      Attachments__Provider: Local
       Attachments__StoragePath: /data/attachments
     depends_on:
       postgres:
