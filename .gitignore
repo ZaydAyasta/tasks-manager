@@ -11,6 +11,7 @@ coverage-reports/
 .testagent/
 .env
 .env.*
+!/.env.example
 node_modules/
 dist/
 **/node_modules/

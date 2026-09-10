@@ -5,7 +5,7 @@
 Un backup completo de Nakama requiere dos conjuntos coherentes:
 
 1. PostgreSQL: usuarios, proyectos, tareas, actividad, metadata de adjuntos y notificaciones.
-2. El contenido de `Attachments:StoragePath`: los bytes de los archivos.
+2. El contenido de `Attachments:StoragePath` (el volumen persistente `/data/attachments` en contenedores): los bytes de los archivos.
 
 PostgreSQL no contiene los bytes de adjuntos. Coordine ambos respaldos aproximadamente en el mismo punto temporal y registre la fecha/hora, versión de aplicación y ubicación de storage.
 
@@ -17,7 +17,7 @@ Use una cuenta de PostgreSQL con permisos de lectura de la base objetivo y entre
 pg_dump --format=custom --file "D:\NakamaBackups\nakama-YYYYMMDD-HHMM.dump" --dbname "<production-connection-string>"
 ```
 
-El formato `custom` permite inspección y restore selectivo con `pg_restore`. Respalde la carpeta configurada en `Attachments:StoragePath` con la herramienta aprobada por infraestructura, preservando permisos y estructura de archivos.
+El formato `custom` permite inspección y restore selectivo con `pg_restore`. Respalde la carpeta configurada en `Attachments:StoragePath` con la herramienta aprobada por infraestructura, preservando permisos y estructura de archivos. En contenedores, haga copia o snapshot del volumen persistente montado en `/data/attachments`; no respalde la capa efímera de la imagen.
 
 ## Restore verificable en una base aislada
 
@@ -38,7 +38,7 @@ No ejecute este procedimiento sobre `nakama_dev`, `nakama_test` ni la base de Pr
 7. Descargue el adjunto y compruebe tamaño y contenido esperado.
 8. Consulte `/health` y confirme que PostgreSQL está saludable.
 
-Documente el resultado, duración y cualquier discrepancia. Un restore que sólo recupera PostgreSQL pero no puede descargar adjuntos no es un restore completo.
+Documente el resultado, duración y cualquier discrepancia. Programe esta validación de restore periódicamente. Un restore que sólo recupera PostgreSQL pero no puede descargar adjuntos no es un restore completo.
 
 ## Seguridad de la operación
 

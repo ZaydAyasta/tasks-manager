@@ -19,6 +19,11 @@ using System.Text;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
+var hostingPort = builder.Configuration["PORT"];
+if (int.TryParse(hostingPort, out var port) && port is > 0 and <= 65535)
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
 var runtimeSettings = RuntimeConfiguration.Validate(builder.Configuration, builder.Environment.EnvironmentName);
 
 builder.Host.UseSerilog((context, services, configuration) => configuration

@@ -4,7 +4,9 @@ Base técnica del sistema interno de gestión de proyectos y tareas.
 
 ## Operaciones
 
-Para el piloto interno consulte [despliegue](docs/operations/deployment.md), [backup y restore](docs/operations/backup-restore.md), el [smoke test](docs/operations/pilot-smoke-test.md), los [datos UAT](docs/operations/pilot-test-data.md), el [registro de hallazgos](docs/operations/pilot-findings.md) y las [notas MVP RC1](docs/releases/mvp-rc1.md). Production requiere configuración externa para PostgreSQL, JWT, CORS y almacenamiento persistente de adjuntos.
+Para el piloto interno consulte [despliegue](docs/operations/deployment.md), el [despliegue genérico con contenedores](docs/operations/container-deployment.md), [backup y restore](docs/operations/backup-restore.md), el [smoke test](docs/operations/pilot-smoke-test.md), los [datos UAT](docs/operations/pilot-test-data.md), el [registro de hallazgos](docs/operations/pilot-findings.md) y las [notas MVP RC1](docs/releases/mvp-rc1.md). Production requiere configuración externa para PostgreSQL, JWT, CORS y almacenamiento persistente de adjuntos.
+
+En una instalación Production nueva, aplique primero las migraciones y luego cree el único primer Admin de forma explícita con `dotnet run --project src/backend/Nakama.Provisioning -- create-first-admin --name "Administrador" --email "admin@nakama.local"`. El comando imprime una contraseña temporal una sola vez; guárdela en un gestor de contraseñas. No configure `DevelopmentBootstrap` para Production.
 
 ## Frontend Vue
 

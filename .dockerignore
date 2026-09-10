@@ -1,0 +1,16 @@
+.git/
+.github/
+.vs/
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+artifacts/
+*.user
+*.suo
+*.log
+.env
+.env.*
+!.env.example
+appsettings.Development.json
+secrets/
