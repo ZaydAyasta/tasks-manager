@@ -38,4 +38,16 @@ describe('login redirects', () => {
 
     expect(replace).toHaveBeenCalledWith('/my-work')
   })
+
+  it('shows a connection error when the API is unavailable', async () => {
+    login.mockRejectedValue({ status: 0, message: 'No se pudo conectar con el servidor.' })
+    const wrapper = mount(LoginView)
+
+    await wrapper.get('input[type="email"]').setValue('user@nakama.test')
+    await wrapper.get('input[type="password"]').setValue('Password1')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toBe('No se pudo conectar con el servidor.')
+  })
 })

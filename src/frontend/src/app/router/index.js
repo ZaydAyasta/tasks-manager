@@ -34,12 +34,18 @@ export const resolveNavigation = (to, auth) => {
   if (to.meta.roles && !to.meta.roles.includes(auth.user?.role)) return '/403'
   if (to.meta.guest && auth.isAuthenticated) return auth.isAdmin ? '/dashboard' : '/my-work'
 }
-const router = createRouter({ history: createWebHistory(), routes })
-router.beforeEach(async to => {
-  const auth = useAuthStore()
+export const restoreSessionOrRedirect = async (to, auth) => {
   if (!auth.sessionChecked) {
-    await auth.restoreSession()
+    try {
+      await auth.restoreSession()
+    } catch {
+      if (to.path === '/login') return
+      return { path: '/login', query: { redirect: to.fullPath, error: 'unavailable' } }
+    }
   }
+
   return resolveNavigation(to, auth)
-})
+}
+const router = createRouter({ history: createWebHistory(), routes })
+router.beforeEach(to => restoreSessionOrRedirect(to, useAuthStore()))
 export default router

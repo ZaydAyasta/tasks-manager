@@ -136,7 +136,7 @@ public sealed class AuthenticationApiTests(PostgresApiFactory factory)
         await factory.ResetDatabaseAsync();
         using var anonymous = factory.CreateAnonymousClient();
 
-        for (var attempt = 0; attempt < 10; attempt++)
+        for (var attempt = 0; attempt < PostgresApiFactory.TestLoginRateLimitPermitLimit; attempt++)
         {
             var response = await anonymous.PostAsJsonAsync("/api/auth/login", new { email = "rate-limit@nakama.test", password = "wrong" });
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);

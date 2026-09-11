@@ -19,6 +19,7 @@ namespace Nakama.Api.Tests.Identity;
 public class PostgresApiFactory : WebApplicationFactory<Program>
 {
     public const string DefaultPassword = "Password1";
+    public const int TestLoginRateLimitPermitLimit = 100;
     private const string AdminEmail = "admin@nakama.test";
     private const string AdminPassword = "AdminPassword1";
     private const string JwtIssuer = "Nakama.Api.Tests";
@@ -42,6 +43,7 @@ public class PostgresApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Authentication:Jwt:Audience", JwtAudience);
         builder.UseSetting("Authentication:Jwt:SigningKey", JwtSigningKey);
         builder.UseSetting("Authentication:Jwt:AccessTokenMinutes", "60");
+        builder.UseSetting("Authentication:LoginRateLimit:PermitLimit", TestLoginRateLimitPermitLimit.ToString());
         builder.UseSetting("ConnectionStrings:NakamaDatabase", testConnectionString ?? string.Empty);
         builder.UseSetting("Cors:AllowedOrigins:0", EnvironmentName == "Production" ? "https://nakama.test" : "http://localhost:5173");
         builder.UseSetting("AllowedHosts", "localhost");
@@ -53,6 +55,7 @@ public class PostgresApiFactory : WebApplicationFactory<Program>
             ["Authentication:Jwt:Audience"] = JwtAudience,
             ["Authentication:Jwt:SigningKey"] = JwtSigningKey,
             ["Authentication:Jwt:AccessTokenMinutes"] = "60",
+            ["Authentication:LoginRateLimit:PermitLimit"] = TestLoginRateLimitPermitLimit.ToString(),
             ["Cors:AllowedOrigins:0"] = EnvironmentName == "Production" ? "https://nakama.test" : "http://localhost:5173",
             ["AllowedHosts"] = "localhost",
             ["DevelopmentBootstrap:Admin:Email"] = string.Empty,

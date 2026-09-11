@@ -8,7 +8,7 @@ const router = useRouter()
 const route = useRoute()
 const email = ref('')
 const password = ref('')
-const error = ref('')
+const error = ref(route.query.error === 'unavailable' ? 'No se pudo conectar con el servidor. Comprueba que esté disponible e inténtalo de nuevo.' : '')
 const submitting = ref(false)
 
 async function submit() {
@@ -18,8 +18,8 @@ async function submit() {
   try {
     const user = await auth.login({ email: email.value, password: password.value })
     router.replace(route.query.redirect || (user.role === 'Admin' ? '/dashboard' : '/my-work'))
-  } catch {
-    error.value = 'Credenciales inválidas.'
+  } catch (cause) {
+    error.value = cause?.status === 0 ? cause.message : 'Credenciales inválidas.'
   } finally {
     submitting.value = false
   }
