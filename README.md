@@ -1,6 +1,69 @@
 # Nakama
 
-Base técnica del sistema interno de gestión de proyectos y tareas.
+Nakama es un sistema interno para organizar proyectos, etapas y tareas de un equipo en un solo lugar. Está pensado para que las personas administradoras configuren el trabajo y tengan visibilidad operativa, mientras que los colaboradores se concentran en las tareas que les han sido asignadas.
+
+## ¿Qué problema resuelve?
+
+Centraliza el ciclo de trabajo de un proyecto: desde crear su estructura y asignar responsables hasta controlar bloqueos, revisiones, evidencias y cierre. Así se evita depender de conversaciones dispersas para saber quién hace qué, en qué etapa está una tarea o qué necesita atención.
+
+## Funcionalidades principales
+
+- Proyectos con etapas ordenadas, miembros y estados de ciclo de vida.
+- Tareas con prioridad, vencimiento, responsables, subtareas y control de versión para cambios concurrentes.
+- Flujo de trabajo: pendiente, en progreso, bloqueada, en revisión y completada.
+- Dependencias entre tareas y bloqueos que restauran el estado anterior cuando se resuelven.
+- Comentarios, adjuntos privados y registro de actividad inmutable por proyecto y tarea.
+- Notificaciones dentro de la aplicación y preferencias por tipo de evento.
+- Dashboard administrativo para identificar proyectos, tareas prioritarias, bloqueos y trabajo en revisión.
+- Vista **Mi trabajo** para que cada colaborador vea sólo sus tareas activas.
+
+## Roles
+
+| Rol | Qué puede hacer |
+| --- | --- |
+| **Admin** | Crear y administrar proyectos, etapas, equipo y tareas; asignar responsables; revisar, solicitar cambios y completar tareas; consultar el Dashboard. |
+| **Collaborator** | Consultar sus proyectos y tareas asignadas; iniciar trabajo, gestionar subtareas, comentar, adjuntar archivos, reportar o resolver bloqueos y enviar tareas a revisión. |
+
+Las autorizaciones se validan también en la API: un usuario no puede actuar como otra persona ni acceder a proyectos de los que no forma parte.
+
+## Recorrido habitual
+
+1. Un Admin crea el proyecto, define las etapas y agrega al equipo.
+2. El Admin crea tareas y asigna responsables.
+3. El Collaborator trabaja desde **Mi trabajo**, registra avances y envía la tarea a revisión.
+4. El Admin aprueba la tarea o solicita cambios.
+5. El historial y las notificaciones conservan la trazabilidad del proceso.
+
+## Arquitectura
+
+| Componente | Tecnología | Responsabilidad |
+| --- | --- | --- |
+| Cliente web | Vue 3, Vite, Vue Router y Pinia | Interfaz, sesión y flujos de trabajo. |
+| API | ASP.NET Core / .NET 10 | Reglas de negocio, autorización, concurrencia y endpoints. |
+| Persistencia | PostgreSQL con EF Core | Proyectos, tareas, usuarios, auditoría y notificaciones. |
+| Seguridad | JWT, cookie HttpOnly en Production y CSRF | Protección de sesión y mutaciones autenticadas. |
+
+## Inicio rápido local
+
+1. Configura PostgreSQL, JWT y el primer administrador siguiendo [Configuración local](#configuración-local) y [Autenticación en Development](#authentication-development-setup).
+2. Inicia la API en `http://localhost:5000`:
+
+   ```powershell
+   dotnet run --project src/backend/Nakama.Api
+   ```
+
+3. En otra terminal, inicia el cliente web:
+
+   ```powershell
+   cd src/frontend
+   Copy-Item .env.example .env
+   npm install
+   npm run dev
+   ```
+
+4. Abre `http://localhost:5173` e ingresa con una cuenta de Development.
+
+Para datos de demostración reproducibles y un recorrido completo de aceptación, consulta [datos UAT](docs/operations/pilot-test-data.md) y el [smoke test del piloto](docs/operations/pilot-smoke-test.md).
 
 ## Operaciones
 
