@@ -13,6 +13,7 @@ using Nakama.Api.Modules.Tasks;
 using Serilog;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HostFiltering;
 using Microsoft.IdentityModel.Tokens;
 using Nakama.Api.Modules.Identity.Authentication;
 using System.Text;
@@ -25,6 +26,16 @@ if (int.TryParse(hostingPort, out var port) && port is > 0 and <= 65535)
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
 var runtimeSettings = RuntimeConfiguration.Validate(builder.Configuration, builder.Environment.EnvironmentName);
+var allowedHosts = builder.Configuration["AllowedHosts"]!
+    .Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+builder.Services.AddHostFiltering(options =>
+{
+    options.AllowedHosts.Clear();
+    foreach (var host in allowedHosts)
+    {
+        options.AllowedHosts.Add(host);
+    }
+});
 
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
