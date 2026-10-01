@@ -14,6 +14,10 @@ RUN dotnet publish src/backend/Nakama.Provisioning/Nakama.Provisioning.csproj --
 # Railway runs pre-deploy commands from the final image.  Ship an EF migration
 # bundle there so schema changes can be applied before the API is made live
 # without placing the SDK, source tree, or database credentials in production.
+# The bundle generation only constructs the DbContext; it never connects to
+# this design-time placeholder. Railway supplies the real, private connection
+# string to the bundle during the pre-deploy step.
+ENV ConnectionStrings__NakamaDatabase="Host=localhost;Port=5432;Database=nakama;Username=nakama;Password=design-time-only"
 RUN dotnet tool install --tool-path /tools dotnet-ef --version 10.0.0 \
     && /tools/dotnet-ef migrations bundle \
         --project src/backend/Nakama.Api/Nakama.Api.csproj \
