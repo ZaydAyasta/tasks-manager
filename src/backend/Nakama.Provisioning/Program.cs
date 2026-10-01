@@ -34,12 +34,20 @@ var options = new DbContextOptionsBuilder<NakamaDbContext>()
 
 await using var dbContext = new NakamaDbContext(options);
 var provisioner = new FirstAdminProvisioner(dbContext, new PasswordHasher<User>(), new SystemClock());
+var configuredPassword = configuration["Provisioning:FirstAdmin:Password"];
 try
 {
-    var result = await provisioner.CreateAsync(fullName!, email!);
+    var result = await provisioner.CreateAsync(fullName!, email!, configuredPassword);
     Console.WriteLine("Admin created successfully.");
     Console.WriteLine($"Email: {result.Email}");
-    Console.WriteLine($"Temporary password: {result.TemporaryPassword}");
+    if (result.TemporaryPassword is not null)
+    {
+        Console.WriteLine($"Temporary password: {result.TemporaryPassword}");
+    }
+    else
+    {
+        Console.WriteLine("The configured password was accepted and was not printed.");
+    }
     return 0;
 }
 catch (FirstAdminProvisioningException exception)

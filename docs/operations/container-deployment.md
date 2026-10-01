@@ -82,6 +82,24 @@ El comando valida y normaliza los datos como Identity, crea un Admin activo y ge
 
 Es conservador: falla sin modificar datos si el email existe o si ya hay un Admin activo. No se ejecuta al iniciar la API, Docker o Compose. `DevelopmentBootstrap` continúa limitado a Development.
 
+Si el operador debe imponer una contraseña inicial en vez de recibir una temporal, configure de forma sellada y **sólo para el provisionamiento** `Provisioning__FirstAdmin__Password`. El provisionador la valida (mínimo ocho caracteres), la convierte directamente en `PasswordHash` y nunca la imprime. El valor debe eliminarse inmediatamente después de que el comando termine; no lo deje disponible para la API en ejecución. Dentro de la imagen de API, ejecute el provisionador así:
+
+```sh
+dotnet /app/provisioning/Nakama.Provisioning.dll create-first-admin --name "<nombre>" --email "<correo>"
+```
+
+### Railway: migración antes de activar la API
+
+La imagen de `Nakama.Api` incluye un bundle EF (`/app/efbundle`) exclusivamente para la fase pre-deploy. Configure en Railway el siguiente **Pre-deploy command** en el servicio de API:
+
+```sh
+./efbundle --connection "$ConnectionStrings__NakamaDatabase"
+```
+
+El comando se ejecuta dentro de la red privada y debe recibir la cadena mediante una variable de referencia al servicio PostgreSQL; no habilite acceso TCP público a PostgreSQL. Railway cancela el deployment si el bundle falla, de modo que una migración no aplicada nunca deja la nueva API activa. Configure un timeout explícito razonable para el tamaño de la base y consulte el estado de `__EFMigrationsHistory` después del deployment.
+
+Para el health check de Railway configure `/health/ready`. Como Railway usa el host `healthcheck.railway.app`, incluya ese host además del hostname público de la API en `AllowedHosts`; de lo contrario ASP.NET Core puede responder `400` y Railway marcará el deployment como fallido. El volumen de adjuntos debe montarse en `/data/attachments`; no use el filesystem efímero del contenedor.
+
 ## Validación operativa
 
 Configure los dominios, TLS y proxy externo. El proxy debe conservar cookies, cuerpo multipart y `X-Nakama-Csrf`. Configure liveness en `/health/live` y readiness en `/health/ready`. Como smoke test, compruebe ambos endpoints, inicie sesión, cree una tarea, cargue y descargue un adjunto, y confirme que la SPA resuelve una ruta profunda.

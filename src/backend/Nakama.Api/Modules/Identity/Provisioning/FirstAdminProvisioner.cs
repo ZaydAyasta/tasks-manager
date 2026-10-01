@@ -7,7 +7,7 @@ using Nakama.Api.Modules.Identity.Domain;
 
 namespace Nakama.Api.Modules.Identity.Provisioning;
 
-public sealed record FirstAdminProvisioningResult(string Email, string TemporaryPassword);
+public sealed record FirstAdminProvisioningResult(string Email, string? TemporaryPassword);
 
 public sealed class FirstAdminProvisioningException(string message) : Exception(message);
 
@@ -22,6 +22,7 @@ public sealed class FirstAdminProvisioner(
     public async Task<FirstAdminProvisioningResult> CreateAsync(
         string fullName,
         string email,
+        string? initialPassword = null,
         CancellationToken cancellationToken = default)
     {
         User profile;
@@ -46,9 +47,17 @@ public sealed class FirstAdminProvisioner(
             throw new FirstAdminProvisioningException("An active Admin already exists. Use the application to manage additional users.");
         }
 
-        var temporaryPassword = GenerateTemporaryPassword();
+        if (!string.IsNullOrWhiteSpace(initialPassword) && initialPassword.Length < 8)
+        {
+            throw new FirstAdminProvisioningException("The configured first Admin password must contain at least 8 characters.");
+        }
+
+        var temporaryPassword = string.IsNullOrWhiteSpace(initialPassword)
+            ? GenerateTemporaryPassword()
+            : null;
+        var password = temporaryPassword ?? initialPassword!;
         var admin = User.Create(profile.FullName, profile.Email, UserRole.Admin,
-            passwordHasher.HashPassword(profile, temporaryPassword), clock);
+            passwordHasher.HashPassword(profile, password), clock);
         dbContext.Users.Add(admin);
 
         try
