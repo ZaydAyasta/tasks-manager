@@ -14,4 +14,5 @@ FROM nginx:1.29-alpine AS runtime
 # for the Vite production build.
 COPY src/frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
+ENV PORT=8080
+EXPOSE 8080
