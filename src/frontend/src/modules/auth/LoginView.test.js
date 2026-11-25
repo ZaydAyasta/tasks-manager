@@ -20,7 +20,7 @@ import LoginView from './LoginView.vue'
 async function submit(role) {
   login.mockResolvedValue({ role })
   const wrapper = mount(LoginView)
-  await wrapper.get('input[type="email"]').setValue('user@nakama.test')
+  await wrapper.get('input[autocomplete="username"]').setValue('user@nakama.test')
   await wrapper.get('input[type="password"]').setValue('Password1')
   await wrapper.get('form').trigger('submit.prevent')
   await flushPromises()
@@ -43,7 +43,7 @@ describe('login redirects', () => {
     login.mockRejectedValue({ status: 0, message: 'No se pudo conectar con el servidor.' })
     const wrapper = mount(LoginView)
 
-    await wrapper.get('input[type="email"]').setValue('user@nakama.test')
+    await wrapper.get('input[autocomplete="username"]').setValue('user@nakama.test')
     await wrapper.get('input[type="password"]').setValue('Password1')
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()

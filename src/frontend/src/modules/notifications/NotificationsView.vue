@@ -5,6 +5,7 @@ import { apiMessage } from '../../app/services/api'
 import { notificationPreferenceLabels, presentNotification } from './notification-presenter'
 import { notificationsService } from './notifications.service'
 import { useNotificationsStore } from './notifications.store'
+import { appendUnique } from '../../shared/presentation'
 
 const router = useRouter()
 const notificationsStore = useNotificationsStore()
@@ -15,6 +16,8 @@ const isLoading = ref(true)
 const isMarkingAllRead = ref(false)
 const error = ref('')
 const changingPreference = ref('')
+const nextCursor = ref(null)
+const loadingMore = ref(false)
 const emptyMessage = computed(() => unreadOnly.value ? 'Estás al día.' : 'No tienes notificaciones.')
 
 function formatDate(value) {
@@ -36,12 +39,24 @@ async function load() {
       notificationsService.getPreferences()
     ])
     items.value = feed?.items ?? []
+    nextCursor.value = feed?.nextCursor ?? null
     preferences.value = preferenceItems ?? []
   } catch (requestError) {
     error.value = apiMessage(requestError)
   } finally {
     isLoading.value = false
   }
+}
+
+async function loadMore() {
+  if (loadingMore.value || !nextCursor.value) return
+  loadingMore.value = true; error.value = ''
+  try {
+    const feed = await notificationsService.list({ unreadOnly: unreadOnly.value, cursor: nextCursor.value })
+    items.value = appendUnique(items.value, feed.items)
+    nextCursor.value = feed.nextCursor
+  } catch (cause) { error.value = apiMessage(cause) }
+  finally { loadingMore.value = false }
 }
 
 async function selectFilter(value) {
@@ -109,7 +124,7 @@ onMounted(async () => {
         <h1>Notificaciones</h1>
         <p>Actualizaciones relevantes para tu trabajo.</p>
       </div>
-      <button class="button secondary" :disabled="isMarkingAllRead || !items.some(item => !item.isRead)" @click="markAllRead">
+      <button class="button secondary" :disabled="isMarkingAllRead || loadingMore || isLoading || !items.some(item => !item.isRead)" @click="markAllRead">
         Marcar todas como leídas
       </button>
     </header>
@@ -119,8 +134,8 @@ onMounted(async () => {
     <div class="notifications-layout">
       <section class="notifications-feed" aria-label="Centro de notificaciones">
         <div class="local-tabs" role="tablist" aria-label="Filtro de notificaciones">
-          <button :class="{ active: !unreadOnly }" role="tab" :aria-selected="!unreadOnly" @click="selectFilter(false)">Todas</button>
-          <button :class="{ active: unreadOnly }" role="tab" :aria-selected="unreadOnly" @click="selectFilter(true)">No leídas</button>
+          <button :disabled="isLoading || loadingMore" :class="{ active: !unreadOnly }" role="tab" :aria-selected="!unreadOnly" @click="selectFilter(false)">Todas</button>
+          <button :disabled="isLoading || loadingMore" :class="{ active: unreadOnly }" role="tab" :aria-selected="unreadOnly" @click="selectFilter(true)">No leídas</button>
         </div>
 
         <p v-if="isLoading" class="state-card">Cargando notificaciones...</p>
@@ -136,6 +151,7 @@ onMounted(async () => {
             <span class="notification-state">{{ notification.isRead ? 'Leída' : 'Nueva' }}</span>
           </button>
         </div>
+        <div v-if="nextCursor && !isLoading" class="pagination"><button class="button secondary" :disabled="loadingMore" @click="loadMore">{{ loadingMore ? 'Cargando...' : 'Cargar más notificaciones' }}</button></div>
       </section>
 
       <aside class="notification-preferences detail-section">

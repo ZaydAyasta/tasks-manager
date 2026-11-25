@@ -1,16 +1,18 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { fileURLToPath } from 'node:url'
+import { resolveApiBaseUrl } from './src/app/services/api-base-url.js'
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, '../..', '')
+const envDir = fileURLToPath(new URL('../../', import.meta.url))
 
-  if (mode === 'production' && !env.VITE_API_BASE_URL?.trim()) {
-    throw new Error('VITE_API_BASE_URL must be configured for a production build.')
+export default defineConfig(({ command, mode }) => {
+  if (command === 'build') {
+    resolveApiBaseUrl(loadEnv(mode, envDir).VITE_API_BASE_URL, true)
   }
 
   return {
-    envDir: '../..',
-    plugins: [vue()],
+    envDir,
+    plugins: [vue({ template: { compilerOptions: { isCustomElement: tag => tag === 'search' } } })],
     test: { environment: 'jsdom', globals: true }
   }
 })

@@ -1,5 +1,6 @@
 using Nakama.Api.BuildingBlocks.Persistence;
 using Nakama.Api.BuildingBlocks.Time;
+using Nakama.Api.Modules.Identity.Authentication;
 
 namespace Nakama.Api.Modules.Identity.Features;
 
@@ -13,6 +14,7 @@ internal static class ChangeUserRole
         ChangeUserRoleRequest request,
         NakamaDbContext dbContext,
         IClock clock,
+        ICurrentUser actor,
         CancellationToken cancellationToken)
     {
         if (!IdentityEndpointHelpers.TryGetRole(request.Role, out var role))
@@ -20,14 +22,6 @@ internal static class ChangeUserRole
             return IdentityEndpointHelpers.ValidationProblem("Role debe ser Admin o Collaborator.");
         }
 
-        var user = await IdentityEndpointHelpers.FindUserAsync(dbContext, id, cancellationToken);
-        if (user is null)
-        {
-            return IdentityEndpointHelpers.NotFoundProblem(id);
-        }
-
-        user.ChangeRole(role, clock);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return Results.NoContent();
+        return await UserAdministration.ChangeAsync(id, role, false, dbContext, clock, actor, cancellationToken);
     }
 }

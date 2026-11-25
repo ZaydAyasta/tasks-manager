@@ -41,7 +41,7 @@ internal static class SubtasksEndpoints
     {
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == taskId, ct);
         if (task is null) return (null, Problem("task-not-found", 404));
-        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return (null, Problem("task-forbidden", 403));
+        if (!await TaskAccess.CanWorkAsync(db, task, currentUser, ct)) return (null, Problem("task-forbidden", 403));
         if (!IsMutable(task)) return (null, Problem("task-subtasks-read-only", 409));
         if (version is not > 0 || version != task.Version) return (null, Problem("task-version-conflict", 409));
         return (task, null);
@@ -56,7 +56,7 @@ internal static class SubtasksEndpoints
         var user = await db.Users.SingleOrDefaultAsync(x => x.Id == userId, ct);
         if (user is null) return Problem("user-not-found", 404);
         if (!user.IsActive) return Problem("subtask-user-inactive", 409);
-        if (!await db.ProjectMembers.AnyAsync(x => x.ProjectId == task.ProjectId && x.UserId == userId, ct)) return Problem("subtask-user-not-project-member", 409);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return Problem("subtask-user-not-project-member", 409);
 
         await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
         try

@@ -2,7 +2,7 @@ using Nakama.Api.Modules.Identity.Domain;
 
 namespace Nakama.Api.Modules.Identity.Features;
 
-public sealed record CreateUserRequest(string? FullName, string? Email, string? Role, string? Password);
+public sealed record CreateUserRequest(string? FullName, string? Email, string? Role, string? Password, bool MustChangePassword = false);
 public sealed record ChangeUserRoleRequest(string? Role);
 
 public sealed record UserDetailResponse(
@@ -12,9 +12,9 @@ public sealed record UserDetailResponse(
     string Role,
     bool IsActive,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt, bool MustChangePassword = false);
 
-public sealed record UserListItemResponse(Guid Id, string FullName, string Email, string Role, bool IsActive);
+public sealed record UserListItemResponse(Guid Id, string FullName, string Email, string Role, bool IsActive, bool MustChangePassword = false);
 
 internal static class UserMappings
 {
@@ -25,12 +25,12 @@ internal static class UserMappings
         user.Role.ToString(),
         user.IsActive,
         user.CreatedAt,
-        user.UpdatedAt);
+        user.UpdatedAt, user.MustChangePassword);
 
     public static UserListItemResponse ToListItemResponse(this User user) => new(
         user.Id,
         user.FullName,
         user.Email,
         user.Role.ToString(),
-        user.IsActive);
+        user.IsActive, user.MustChangePassword);
 }

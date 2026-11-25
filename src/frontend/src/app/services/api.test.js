@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, configureApi, resolveApiBaseUrl } from './api'
+import { api, configureApi } from './api'
+import { resolveApiBaseUrl } from './api-base-url'
 
 describe('api client authentication', () => {
   afterEach(() => {
@@ -11,8 +12,10 @@ describe('api client authentication', () => {
     expect(() => resolveApiBaseUrl('', true)).toThrow('must be configured')
     expect(() => resolveApiBaseUrl('http://api.nakama.test', true)).toThrow('absolute HTTPS URL')
     expect(() => resolveApiBaseUrl('https://localhost:5000', true)).toThrow('absolute HTTPS URL')
+    expect(() => resolveApiBaseUrl('https://127.0.0.2', true)).toThrow('absolute HTTPS URL')
     expect(() => resolveApiBaseUrl('https://user:pass@api.nakama.test', true)).toThrow('without credentials')
     expect(resolveApiBaseUrl('https://api.nakama.test/', true)).toBe('https://api.nakama.test')
+    expect(resolveApiBaseUrl('HTTPS://127.nakama.test', true)).toBe('https://127.nakama.test')
   })
 
   it('includes cookies and the CSRF header for authenticated mutations', async () => {

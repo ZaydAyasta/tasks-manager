@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import Badges from '../../../shared/components/Badges.vue'
 
 const props = defineProps({
   item: { type: Object, required: true }
@@ -17,8 +18,8 @@ const formattedDueDate = computed(() => dueDate.value
     <div class="attention-main">
       <div class="attention-title-row">
         <strong>{{ item.title }}</strong>
-        <span class="badge" :class="item.status.toLowerCase()">{{ item.status }}</span>
-        <span class="badge" :class="item.priority.toLowerCase()">{{ item.priority }}</span>
+        <Badges :value="item.status" />
+        <Badges :value="item.priority" type="priority" />
       </div>
       <p>{{ item.projectName }}</p>
       <div class="attention-reasons">

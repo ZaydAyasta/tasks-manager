@@ -58,6 +58,10 @@ public sealed class FirstAdminProvisioner(
         var password = temporaryPassword ?? initialPassword!;
         var admin = User.Create(profile.FullName, profile.Email, UserRole.Admin,
             passwordHasher.HashPassword(profile, password), clock);
+        if (temporaryPassword is not null)
+        {
+            admin.ChangePassword(admin.PasswordHash, requireChange: true, clock);
+        }
         dbContext.Users.Add(admin);
 
         try

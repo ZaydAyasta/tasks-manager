@@ -20,6 +20,7 @@ public static class IdentityModuleExtensions
         Features.ActivateUser.MapEndpoint(group);
         Features.DeactivateUser.MapEndpoint(group);
         Features.ChangeUserRole.MapEndpoint(group);
+        Features.PasswordEndpoints.MapEndpoints(group);
 
         Features.AuthEndpoints.MapEndpoints(app);
         return app;

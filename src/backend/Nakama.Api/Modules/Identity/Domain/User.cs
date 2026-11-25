@@ -30,6 +30,8 @@ public sealed partial class User
     public UserRole Role { get; private set; }
     public string PasswordHash { get; private set; } = null!;
     public bool IsActive { get; private set; }
+    public bool MustChangePassword { get; private set; }
+    public int SecurityVersion { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
@@ -65,6 +67,23 @@ public sealed partial class User
         UpdatedAt = clock.UtcNow;
     }
 
+    public void ChangePassword(string passwordHash, bool requireChange, IClock clock)
+    {
+        ArgumentNullException.ThrowIfNull(clock);
+        if (string.IsNullOrWhiteSpace(passwordHash)) throw new ArgumentException("La contraseña es obligatoria.", nameof(passwordHash));
+        PasswordHash = passwordHash;
+        MustChangePassword = requireChange;
+        SecurityVersion++;
+        UpdatedAt = clock.UtcNow;
+    }
+
+    public static string NormalizeLogin(string? login)
+    {
+        var value = login?.Trim().ToLowerInvariant() ?? "";
+        if (!value.Contains('@') && Regex.IsMatch(value, "^[a-z0-9][a-z0-9._-]{0,63}$")) value += "@trello.local";
+        return value;
+    }
+
     public void Activate(IClock clock)
     {
         ArgumentNullException.ThrowIfNull(clock);
@@ -77,6 +96,7 @@ public sealed partial class User
     {
         ArgumentNullException.ThrowIfNull(clock);
 
+        if (IsActive) SecurityVersion++;
         IsActive = false;
         UpdatedAt = clock.UtcNow;
     }

@@ -1,35 +1,6 @@
-const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
+import { resolveApiBaseUrl } from './api-base-url'
 
-export function resolveApiBaseUrl(baseUrl, isProduction) {
-  if (!baseUrl) {
-    if (isProduction) {
-      throw new Error('VITE_API_BASE_URL must be configured for a production build.')
-    }
-
-    return 'http://localhost:5000'
-  }
-
-  const normalizedBaseUrl = baseUrl.replace(/\/$/, '')
-  if (!isProduction) {
-    return normalizedBaseUrl
-  }
-
-  let url
-  try {
-    url = new URL(normalizedBaseUrl)
-  } catch {
-    throw new Error('VITE_API_BASE_URL must be an absolute HTTPS URL for a production build.')
-  }
-
-  const isLoopbackHost = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(url.hostname)
-  if (url.protocol !== 'https:' || isLoopbackHost || url.username || url.password || url.search || url.hash) {
-    throw new Error('VITE_API_BASE_URL must be an absolute HTTPS URL without credentials, query, or fragment for a production build.')
-  }
-
-  return normalizedBaseUrl
-}
-
-const BASE_URL = resolveApiBaseUrl(configuredBaseUrl, import.meta.env.PROD)
+const BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL, import.meta.env.PROD)
 
 export class ApiError extends Error {
   constructor(status, problem = {}) {

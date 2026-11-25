@@ -9,6 +9,8 @@ import MyWorkView from '../../modules/work/MyWorkView.vue'
 import NotificationsView from '../../modules/notifications/NotificationsView.vue'
 import DashboardView from '../../modules/dashboard/DashboardView.vue'
 import BasicStateView from '../../shared/components/BasicStateView.vue'
+import UsersView from '../../modules/users/UsersView.vue'
+import AccountView from '../../modules/auth/AccountView.vue'
 
 export const routes = [
   { path: '/login', component: LoginView, meta: { guest: true } },
@@ -17,6 +19,8 @@ export const routes = [
     component: AppLayout,
     meta: { requiresAuth: true },
     children: [
+    { path: 'users', component: UsersView, meta: { requiresAuth: true, roles: ['Admin'] } },
+    { path: 'account', component: AccountView, meta: { requiresAuth: true } },
     { path: 'dashboard', component: DashboardView, meta: { requiresAuth: true, roles: ['Admin'] } },
     { path: 'projects', component: ProjectsView, meta: { requiresAuth: true } },
     { path: 'projects/:projectId', component: ProjectBoardView, props: true, meta: { requiresAuth: true } },
@@ -30,6 +34,7 @@ export const routes = [
 ]
 export const resolveNavigation = (to, auth) => {
   if (to.meta.requiresAuth && !auth.isAuthenticated) return { path: '/login', query: { redirect: to.fullPath } }
+  if (auth.isAuthenticated && auth.user?.mustChangePassword && to.path !== '/account') return '/account'
   if (to.path === '/' && auth.isAuthenticated) return auth.isAdmin ? '/dashboard' : '/my-work'
   if (to.meta.roles && !to.meta.roles.includes(auth.user?.role)) return '/403'
   if (to.meta.guest && auth.isAuthenticated) return auth.isAdmin ? '/dashboard' : '/my-work'

@@ -10,7 +10,7 @@ namespace Nakama.Api.Tests.Identity;
 public sealed class ProductionAuthenticationApiTests(ProductionPostgresApiFactory factory)
 {
     [PostgresFact]
-    public async Task Production_logout_expires_the_browser_session_cookie()
+    public async Task Production_logout_revokes_only_the_current_session_and_expires_its_cookie()
     {
         await factory.ResetDatabaseAsync();
         using var session = factory.CreateAnonymousClient(new WebApplicationFactoryClientOptions
@@ -23,6 +23,17 @@ public sealed class ProductionAuthenticationApiTests(ProductionPostgresApiFactor
             "/api/auth/login",
             new { email = "admin@nakama.test", password = "AdminPassword1" });
         var payload = (await login.Content.ReadFromJsonAsync<LoginResponse>())!;
+        using var retainedSession = factory.CreateAnonymousClient();
+        retainedSession.DefaultRequestHeaders.Add("Cookie", Assert.Single(login.Headers.GetValues("Set-Cookie")).Split(';', 2)[0]);
+
+        using var otherSession = factory.CreateAnonymousClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+            HandleCookies = true
+        });
+        var otherLogin = await otherSession.PostAsJsonAsync(
+            "/api/auth/login", new { email = "admin@nakama.test", password = "AdminPassword1" });
+        Assert.Equal(HttpStatusCode.OK, otherLogin.StatusCode);
 
         var beforeLogout = await session.GetAsync("/api/auth/me");
         session.DefaultRequestHeaders.Add("X-Nakama-Csrf", payload.CsrfToken);
@@ -33,6 +44,8 @@ public sealed class ProductionAuthenticationApiTests(ProductionPostgresApiFactor
         Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
         Assert.Contains("nakama.access-token=", Assert.Single(logout.Headers.GetValues("Set-Cookie")));
         Assert.Equal(HttpStatusCode.Unauthorized, afterLogout.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await retainedSession.GetAsync("/api/auth/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await otherSession.GetAsync("/api/auth/me")).StatusCode);
     }
 
     [PostgresFact]

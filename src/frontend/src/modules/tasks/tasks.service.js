@@ -6,7 +6,9 @@ export const workflowActions = (status, isAdmin) => {
   return []
 }
 export const tasksService = {
-  get: id => api(`/api/tasks/${id}`), subtasks: id => api(`/api/tasks/${id}/subtasks`), blockers: id => api(`/api/tasks/${id}/blockers`), dependencies: id => api(`/api/tasks/${id}/dependencies`), dependents: id => api(`/api/tasks/${id}/dependents`), activity: id => api(`/api/tasks/${id}/activity`),
+  get: id => api(`/api/tasks/${id}`), subtasks: id => api(`/api/tasks/${id}/subtasks`), blockers: id => api(`/api/tasks/${id}/blockers`), dependencies: id => api(`/api/tasks/${id}/dependencies`), dependents: id => api(`/api/tasks/${id}/dependents`), activity: (id, cursor) => api(`/api/tasks/${id}/activity${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+  addDependency: (id, dependsOnTaskId, taskVersion) => api(`/api/tasks/${id}/dependencies`, { method: 'POST', body: { dependsOnTaskId, taskVersion } }),
+  removeDependency: (id, dependencyId, taskVersion) => api(`/api/tasks/${id}/dependencies/${dependencyId}`, { method: 'DELETE', body: { taskVersion } }),
   workflow: (id, action, version) => api(`/api/tasks/${id}/${action}`, { method: 'POST', body: { version } }),
   createSubtask: (id, title, taskVersion) => api(`/api/tasks/${id}/subtasks`, { method: 'POST', body: { title, taskVersion } }),
   subtaskAction: (taskId, id, action, taskVersion) => api(`/api/tasks/${taskId}/subtasks/${id}/${action}`, { method: 'POST', body: { taskVersion } }),

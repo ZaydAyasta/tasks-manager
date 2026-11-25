@@ -46,7 +46,6 @@ El alcance incluido es el siguiente:
 | Prioridad | Estado | Limitación o deuda confirmada |
 | --- | --- | --- |
 | P1 | Ninguna abierta | La revisión RC no mantiene hallazgos P1 abiertos. |
-| P2 | Backlog | My Work consume la vista actual sin exponer controles de filtros ni paginación/cursor en la interfaz. |
 | P2 | Backlog | Los adjuntos no tienen integración con un motor antimalware externo; el tipo, extensión y tamaño sí se validan. Debe resolverse antes de aceptar archivos de fuentes no confiables. |
 | P2 | Operación | La suite backend completa puede superar una ventana corta de ejecución interactiva; la regresión RC se realiza por grupos focalizados y no indica un defecto funcional. |
 | P3 | Backlog | El tablero no ofrece drag and drop para mover tareas. |
@@ -59,6 +58,14 @@ No hay P0 abiertos. Estas entradas son deuda o trabajo diferido confirmado, no r
 La evidencia de piloto del 2026-09-03 registra inicio Development con `GET /health` en `200 Healthy`; flujo Admin y Collaborator; y denegación `403` para un non-member al acceder a tarea, comentarios, adjuntos y descarga. El helper `PilotDataSeeder` es exclusivo de Development, está deshabilitado por defecto, exige opt-in y passwords externos cuando se habilita, no se ejecuta en Production y es idempotente para el dataset documentado. Consulte el [registro de hallazgos](../operations/pilot-findings.md): no hay P0/P1 abiertos.
 
 La validación final del 2026-09-06 pasó compilación backend Release sin advertencias ni errores, publicación Release verificable, 82 pruebas backend focalizadas, 45 pruebas frontend, build frontend y la comprobación de migraciones sin cambios pendientes. El hardening incluye autorización Admin consultada contra el rol actual, revocación efectiva tras cambio de rol, límites de login incluso ante el primer acceso concurrente, JWT mínimo de 32 bytes, CORS HTTPS fuera de Development, `AllowedHosts` explícito y comprobado contra host no permitido, sesión browser con cookie HttpOnly/CSRF y cabeceras API de no caché, anti-framing, no-sniff, referrer restrictivo y HSTS. El logout elimina la cookie de sesión del navegador. Los Admin activos también conservan de forma consistente el acceso administrativo a comentarios y adjuntos aunque no sean miembros del proyecto. La operación dispone de `health/live` y `health/ready` separados, conservando `/health`. El arranque Development de la validación mantuvo `PilotData` deshabilitado y no reinicializó datos.
+
+## Validación del candidato local del 25 de noviembre de 2026
+
+- El paquete local incluye administración de usuarios, cambio obligatorio de contraseñas temporales, permisos de trabajo por asignación, cancelación y dependencias en la interfaz, y filtros con paginación en **Mi trabajo**. Incluye las migraciones `AddPasswordLifecycle` y `RevokeLoggedOutSessions`.
+- Cerrar sesión invalida su JWT en el servidor. Desactivar una cuenta invalida sus sesiones y reactivarla requiere iniciar sesión de nuevo. Los adjuntos PDF, PNG, JPEG, DOCX y XLSX tienen comprobaciones de formato adicionales.
+- La compilación Release pasó con **139 pruebas de backend** sobre PostgreSQL local y **63 pruebas de frontend**. EF confirmó que el modelo coincide con la última migración. El build de Vite aceptó una URL HTTPS y rechazó HTTP. La configuración de CI se validó con `actionlint`.
+- En Edge de escritorio y con viewport móvil se verificaron altas, cambio y restablecimiento de contraseñas, permisos por rol y pertenencia, dependencias, subtareas, bloqueos, comentarios, adjuntos, revisión, cancelación y cierre de sesión. Se restauró una copia de PostgreSQL y de los adjuntos de prueba en rutas aisladas y se confirmó el mismo SHA-256 al descargar un archivo mediante la API restaurada.
+- El candidato se probó con datos sintéticos en localhost. Siguen pendientes la ejecución de las imágenes Docker y la aceptación en un entorno publicado.
 
 ## Deferred features
 

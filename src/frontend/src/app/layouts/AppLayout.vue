@@ -1,19 +1,23 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNotificationsStore } from '../../modules/notifications/notifications.store'
 import { useAuthStore } from '../stores/auth.store'
+import { roleLabel } from '../../shared/presentation'
 
 const auth = useAuthStore()
 const notificationsStore = useNotificationsStore()
 const router = useRouter()
+const logoutPending = ref(false)
+const logoutError = ref('')
 
 const navigation = computed(() => {
   const primary = auth.isAdmin
-    ? [{ to: '/dashboard', label: 'Dashboard' }, { to: '/projects', label: 'Proyectos' }, { to: '/my-work', label: 'Mi trabajo' }]
+    ? [{ to: '/dashboard', label: 'Dashboard' }, { to: '/projects', label: 'Proyectos' }, { to: '/my-work', label: 'Mi trabajo' }, { to: '/users', label: 'Usuarios' }]
     : [{ to: '/my-work', label: 'Mi trabajo' }, { to: '/projects', label: 'Mis proyectos' }]
 
-  return [...primary, { to: '/notifications', label: 'Notificaciones', notificationAction: true }]
+  if (auth.user?.mustChangePassword) return [{ to: '/account', label: 'Mi cuenta' }]
+  return [...primary, { to: '/notifications', label: 'Notificaciones', notificationAction: true }, { to: '/account', label: 'Mi cuenta' }]
 })
 
 const home = computed(() => auth.isAdmin ? '/dashboard' : '/my-work')
@@ -24,13 +28,21 @@ function notificationBadge(count) {
 }
 
 async function logout() {
-  await auth.logout()
-  notificationsStore.reset()
-  router.push('/login')
+  logoutPending.value = true
+  logoutError.value = ''
+  try {
+    await auth.logout()
+    notificationsStore.reset()
+    await router.push('/login')
+  } catch {
+    logoutError.value = 'No se pudo cerrar la sesión. Inténtalo de nuevo.'
+  } finally {
+    logoutPending.value = false
+  }
 }
 
 onMounted(() => {
-  if (auth.isAuthenticated) notificationsStore.loadUnreadCount().catch(() => {})
+  if (auth.isAuthenticated && !auth.user?.mustChangePassword) notificationsStore.loadUnreadCount().catch(() => {})
 })
 </script>
 
@@ -50,8 +62,9 @@ onMounted(() => {
         </RouterLink>
       </nav>
       <div class="sidebar-footer">
-        <div class="user-label"><b>{{ auth.user?.fullName }}</b><small>{{ auth.user?.role }}</small></div>
-        <button class="text-button" @click="logout">Cerrar sesión</button>
+        <div class="user-label"><b>{{ auth.user?.fullName }}</b><small>{{ roleLabel(auth.user?.role) }}</small></div>
+        <button type="button" class="text-button" :disabled="logoutPending" @click="logout">Cerrar sesión</button>
+        <p v-if="logoutError" class="form-error" role="alert">{{ logoutError }}</p>
       </div>
     </aside>
     <main class="main-content"><RouterView /></main>

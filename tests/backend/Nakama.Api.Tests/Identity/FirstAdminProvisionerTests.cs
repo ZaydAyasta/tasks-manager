@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,7 +13,7 @@ namespace Nakama.Api.Tests.Identity;
 [Collection(PostgresCollection.Name)]
 public sealed class FirstAdminProvisionerTests(PostgresApiFactory factory)
 {
-    [Fact]
+    [PostgresFact]
     public async Task CreateAsync_creates_active_admin_with_normalized_email_and_hashed_password()
     {
         await factory.ResetDatabaseAsync();
@@ -29,10 +30,16 @@ public sealed class FirstAdminProvisionerTests(PostgresApiFactory factory)
         Assert.Equal("admin@nakama.local", user.Email);
         Assert.Equal(UserRole.Admin, user.Role);
         Assert.True(user.IsActive);
+        Assert.True(user.MustChangePassword);
+        var temporaryPassword = Assert.IsType<string>(result.TemporaryPassword);
         Assert.False(string.IsNullOrWhiteSpace(user.PasswordHash));
-        Assert.NotEqual(result.TemporaryPassword, user.PasswordHash);
+        Assert.NotEqual(temporaryPassword, user.PasswordHash);
         Assert.Equal(PasswordVerificationResult.Success,
-            scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>().VerifyHashedPassword(user, user.PasswordHash, result.TemporaryPassword));
+            scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>().VerifyHashedPassword(user, user.PasswordHash, temporaryPassword));
+
+        using var initialSession = await factory.CreateAuthenticatedClientAsync(result.Email, temporaryPassword);
+        Assert.Equal(HttpStatusCode.OK, (await initialSession.GetAsync("/api/auth/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await initialSession.GetAsync("/api/admin/dashboard")).StatusCode);
     }
 
     [Fact]
@@ -44,7 +51,7 @@ public sealed class FirstAdminProvisionerTests(PostgresApiFactory factory)
         Assert.Matches("^[ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*_-]+$", password);
     }
 
-    [Fact]
+    [PostgresFact]
     public async Task CreateAsync_rejects_duplicate_email_without_modifying_the_existing_user()
     {
         await factory.ResetDatabaseAsync();
@@ -61,7 +68,7 @@ public sealed class FirstAdminProvisionerTests(PostgresApiFactory factory)
         Assert.Equal(original.Id, (await db.Users.SingleAsync()).Id);
     }
 
-    [Fact]
+    [PostgresFact]
     public async Task CreateAsync_rejects_second_first_admin_without_writing_a_user()
     {
         await factory.ResetDatabaseAsync();
@@ -77,7 +84,7 @@ public sealed class FirstAdminProvisionerTests(PostgresApiFactory factory)
         Assert.DoesNotContain(await db.Users.ToListAsync(), user => user.Email == "another@nakama.local");
     }
 
-    [Fact]
+    [PostgresFact]
     public async Task CreateAsync_rejects_invalid_profile_without_writing_a_user()
     {
         await factory.ResetDatabaseAsync();

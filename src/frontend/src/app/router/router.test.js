@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { resolveNavigation, restoreSessionOrRedirect, routes } from './index'
 describe('router configuration', () => {
+  it('requires temporary-password sessions to change password before accessing any work route', () => {
+    const auth = { isAuthenticated: true, isAdmin: true, user: { role: 'Admin', mustChangePassword: true } }
+    expect(resolveNavigation({ path: '/users', meta: { requiresAuth: true } }, auth)).toBe('/account')
+    expect(resolveNavigation({ path: '/account', meta: { requiresAuth: true } }, auth)).toBeUndefined()
+    expect(routes[1].children.find(route => route.path === 'users').meta.roles).toEqual(['Admin'])
+  })
   it('marks the project route as protected', () => expect(routes[1].children.find(route => route.path === 'projects').meta.requiresAuth).toBe(true))
   it('redirects an anonymous user to login for a protected route', () => expect(resolveNavigation({ meta: { requiresAuth: true }, fullPath: '/projects' }, { isAuthenticated: false })).toEqual({ path: '/login', query: { redirect: '/projects' } }))
   it('sends a user without the required role to forbidden', () => expect(resolveNavigation({ meta: { roles: ['Admin'] } }, { isAuthenticated: true, user: { role: 'Collaborator' } })).toBe('/403'))

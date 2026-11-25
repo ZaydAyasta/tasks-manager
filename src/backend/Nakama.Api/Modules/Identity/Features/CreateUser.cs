@@ -22,19 +22,20 @@ internal static class CreateUser
             return IdentityEndpointHelpers.ValidationProblem("Role debe ser Admin o Collaborator.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8)
-            return IdentityEndpointHelpers.ValidationProblem("Password debe tener al menos 8 caracteres.");
+        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8 || request.Password.Length > 128 || (request.MustChangePassword && !PasswordEndpoints.IsValidPassword(request.Password)))
+            return IdentityEndpointHelpers.ValidationProblem(request.MustChangePassword ? "La contraseña temporal debe tener entre 12 y 128 caracteres." : "La contraseña debe tener entre 8 y 128 caracteres.");
         User user;
         try
         {
-            var profile = User.Create(request.FullName ?? string.Empty, request.Email ?? string.Empty, role, "pending", clock);
-            user = User.Create(request.FullName ?? string.Empty, request.Email ?? string.Empty, role, passwordHasher.HashPassword(profile, request.Password), clock);
+            var profile = User.Create(request.FullName ?? string.Empty, User.NormalizeLogin(request.Email), role, "pending", clock);
+            user = User.Create(profile.FullName, profile.Email, role, passwordHasher.HashPassword(profile, request.Password), clock);
         }
         catch (ArgumentException exception)
         {
             return IdentityEndpointHelpers.ValidationProblem(exception.Message);
         }
 
+        if (request.MustChangePassword) user.ChangePassword(user.PasswordHash, true, clock);
         if (await dbContext.Users.AnyAsync(existing => existing.Email == user.Email, cancellationToken))
         {
             return IdentityEndpointHelpers.DuplicateEmailProblem();

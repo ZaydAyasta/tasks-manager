@@ -10,11 +10,11 @@ public sealed record AddProjectMemberRequest(Guid? UserId);
 public sealed record ProjectOwnerResponse(Guid Id, string FullName);
 public sealed record ProjectMemberResponse(Guid UserId, string FullName, string Email, string Role, DateTimeOffset JoinedAt);
 public sealed record ProjectCreatedResponse(Guid Id, string Name, string? Description, string Status, DateOnly? StartDate, DateOnly? EndDate, ProjectOwnerResponse Owner, DateTimeOffset CreatedAt, int Version);
-public sealed record ProjectListItemResponse(Guid Id, string Name, string Status, DateOnly? StartDate, DateOnly? EndDate, int MemberCount);
+public sealed record ProjectListItemResponse(Guid Id, string Name, string Status, DateOnly? StartDate, DateOnly? EndDate, int MemberCount, string? Description = null);
 public sealed record ProjectDetailResponse(Guid Id, string Name, string? Description, string Status, DateOnly? StartDate, DateOnly? EndDate, ProjectOwnerResponse Owner, IReadOnlyList<ProjectMemberResponse> Members, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, int Version);
 
 internal static class ProjectMappings
 {
     public static ProjectListItemResponse ToListItemResponse(this Project project, int memberCount) => new(
-        project.Id, project.Name, project.Status.ToString(), project.StartDate, project.EndDate, memberCount);
+        project.Id, project.Name, project.Status.ToString(), project.StartDate, project.EndDate, memberCount, project.Description);
 }

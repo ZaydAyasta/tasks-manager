@@ -28,7 +28,7 @@ internal static class ListUserProjects
                                   project.Status.ToString(),
                                   project.StartDate,
                                   project.EndDate,
-                                  dbContext.ProjectMembers.Count(otherMember => otherMember.ProjectId == project.Id)))
+                                  dbContext.ProjectMembers.Count(otherMember => otherMember.ProjectId == project.Id), project.Description))
             .ToListAsync(cancellationToken);
 
         return Results.Ok(projects);

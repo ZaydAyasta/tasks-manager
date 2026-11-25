@@ -31,7 +31,16 @@ export const useAuthStore = defineStore('auth', () => {
     isLoading.value = true
 
     try {
-      const result = await api('/api/auth/login', { method: 'POST', body: credentials })
+      const signIn = () => api('/api/auth/login', { method: 'POST', body: credentials })
+      let result
+      try {
+        result = await signIn()
+      } catch (error) {
+        if (error.problem?.type !== 'https://nakama/errors/csrf-invalid') throw error
+        const current = await api('/api/auth/me')
+        csrfToken.value = current.csrfToken
+        result = await signIn()
+      }
       setSession(result.accessToken, result.csrfToken, result.user)
       return result.user
     } finally {
@@ -45,6 +54,12 @@ export const useAuthStore = defineStore('auth', () => {
 
     setSession(accessToken.value, currentCsrfToken, currentUser)
     return currentUser
+  }
+
+  async function changePassword(credentials) {
+    const result = await api('/api/auth/change-password', { method: 'POST', body: credentials })
+    setSession(result.accessToken, result.csrfToken, result.user)
+    return result.user
   }
 
   async function restoreSession() {
@@ -69,13 +84,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout() {
-    try {
-      if (isAuthenticated.value) {
+    if (isAuthenticated.value) {
+      try {
         await api('/api/auth/logout', { method: 'POST' })
+      } catch (error) {
+        if (error.status !== 401) throw error
       }
-    } finally {
-      clear()
     }
+    clear()
   }
 
   configureApi({ getToken: () => accessToken.value, getCsrfToken: () => csrfToken.value, onUnauthorized: clear })
@@ -90,6 +106,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAdmin,
     isCollaborator,
     login,
+    changePassword,
     logout,
     loadCurrentUser,
     restoreSession,

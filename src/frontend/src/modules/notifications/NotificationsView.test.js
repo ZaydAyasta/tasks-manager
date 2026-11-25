@@ -57,6 +57,19 @@ describe('NotificationsView', () => {
     expect(wrapper.find('.notification-unread').exists()).toBe(true)
   })
 
+  it('appends cursor pages without duplicating notifications and resets cursor after filtering', async () => {
+    notificationsService.list.mockResolvedValueOnce({ items: [item], nextCursor: 'next' })
+      .mockResolvedValueOnce({ items: [item, { ...item, id: 'notification-2' }], nextCursor: null })
+      .mockResolvedValueOnce({ items: [], nextCursor: null })
+    const wrapper = mountView(); await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'Cargar más notificaciones').trigger('click'); await flushPromises()
+    expect(notificationsService.list).toHaveBeenNthCalledWith(2, { unreadOnly: false, cursor: 'next' })
+    expect(wrapper.findAll('.notification-item')).toHaveLength(2)
+    await wrapper.get('button[role="tab"][aria-selected="false"]').trigger('click'); await flushPromises()
+    expect(wrapper.findAll('.notification-item')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('Cargar más notificaciones')
+  })
+
   it('requests the unread filter', async () => {
     const wrapper = mountView()
     await flushPromises()

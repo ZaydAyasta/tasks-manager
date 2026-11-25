@@ -17,9 +17,9 @@ async function submit() {
 
   try {
     const user = await auth.login({ email: email.value, password: password.value })
-    router.replace(route.query.redirect || (user.role === 'Admin' ? '/dashboard' : '/my-work'))
+    router.replace(user.mustChangePassword ? '/account' : route.query.redirect || (user.role === 'Admin' ? '/dashboard' : '/my-work'))
   } catch (cause) {
-    error.value = cause?.status === 0 ? cause.message : 'Credenciales inválidas.'
+    error.value = [0, 429].includes(cause?.status) ? cause.message : 'Credenciales inválidas.'
   } finally {
     submitting.value = false
   }
@@ -34,11 +34,12 @@ async function submit() {
       <h1>Entra a tu espacio de trabajo.</h1>
       <p class="login-copy">Coordina proyectos, decisiones y tareas desde un único lugar.</p>
       <form @submit.prevent="submit">
-        <label>Email<input v-model="email" type="email" autocomplete="email" required /></label>
+        <label>Usuario o correo<input v-model="email" type="text" autocomplete="username" maxlength="320" required /></label>
         <label>Contraseña<input v-model="password" type="password" autocomplete="current-password" required /></label>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <button class="button primary full" :disabled="submitting">{{ submitting ? 'Ingresando…' : 'Ingresar' }}</button>
       </form>
+      <p class="recovery-help">Si olvidaste tu contraseña, solicita a un administrador que la restablezca. No necesitas un correo real.</p>
     </section>
   </main>
 </template>

@@ -25,7 +25,7 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options, IClock clock) 
         var csrfToken = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
         var credentials = new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(value.SigningKey)), SecurityAlgorithms.HmacSha256);
         var token = new JwtSecurityToken(value.Issuer, value.Audience,
-            [new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()), new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), new Claim(ClaimTypes.Email, user.Email), new Claim(ClaimTypes.Role, user.Role.ToString()), new Claim(CsrfProtection.ClaimType, csrfToken)],
+            [new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()), new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), new Claim(ClaimTypes.Email, user.Email), new Claim(ClaimTypes.Role, user.Role.ToString()), new Claim("security_version", user.SecurityVersion.ToString()), new Claim(CsrfProtection.ClaimType, csrfToken)],
             expires: expiresAt.UtcDateTime, signingCredentials: credentials);
         return new AuthToken(new JwtSecurityTokenHandler().WriteToken(token), expiresAt, csrfToken);
     }

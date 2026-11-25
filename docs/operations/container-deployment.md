@@ -57,10 +57,10 @@ La API escucha en `0.0.0.0:$PORT` cuando el host inyecta `PORT`; si no existe, l
 Construya el frontend de forma independiente:
 
 ```powershell
-docker build --build-arg VITE_API_BASE_URL=https://api.nakama.example.com -t nakama-web:latest ./src/frontend
+docker build -f src/frontend/Dockerfile --build-arg VITE_API_BASE_URL=https://api.nakama.example.com -t nakama-web:latest .
 ```
 
-El nginx incluido sirve assets y devuelve `index.html` para rutas Vue como `/projects/123`. No proxyfica la API: publique ambos servicios por separado detrás de dominios HTTPS.
+El Nginx incluido escucha en `$PORT` (8080 por defecto), sirve assets y devuelve `index.html` para rutas Vue como `/projects/123`. Inyecte en ejecución el mismo `VITE_API_BASE_URL` usado para compilar, de modo que la política de contenido permita las conexiones a esa API. Publique ambos servicios por separado detrás de dominios HTTPS.
 
 El archivo `compose.yaml` permite verificar una arquitectura local similar a Production. Copie `.env.example` a un `.env` no versionado, sustituya todos los placeholders, y ejecute `docker compose config` antes de levantarlo. Los volúmenes nombrados `nakama-postgres` y `nakama-attachments` representan los dos datos persistentes requeridos. Compose no aplica migraciones ni provisiona usuarios.
 
@@ -78,7 +78,7 @@ Después de una migración exitosa y antes de abrir el acceso de una instalació
 dotnet run --project src/backend/Nakama.Provisioning -- create-first-admin --name "Administrador" --email "admin@nakama.local"
 ```
 
-El comando valida y normaliza los datos como Identity, crea un Admin activo y genera una contraseña temporal criptográficamente segura. La imprime una sola vez tras el commit; guárdela inmediatamente en un gestor de contraseñas. Sólo se persiste `PasswordHash`.
+El comando valida y normaliza los datos como Identity, crea un Admin activo y genera una contraseña temporal criptográficamente segura. La imprime una sola vez tras el commit. Guárdela inmediatamente en un gestor de contraseñas. El Admin debe cambiarla en el primer acceso.
 
 Es conservador: falla sin modificar datos si el email existe o si ya hay un Admin activo. No se ejecuta al iniciar la API, Docker o Compose. `DevelopmentBootstrap` continúa limitado a Development.
 

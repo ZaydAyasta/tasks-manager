@@ -62,7 +62,7 @@ public sealed class AuthenticationApiTests(PostgresApiFactory factory)
     }
 
     [PostgresFact]
-    public async Task Collaborator_member_can_run_workflow_while_outsider_is_forbidden_and_activity_uses_authenticated_actor()
+    public async Task Assigned_collaborator_can_run_workflow_while_outsider_is_forbidden_and_activity_uses_authenticated_actor()
     {
         await factory.ResetDatabaseAsync();
         using var admin = await factory.CreateAdminClientAsync();
@@ -72,7 +72,7 @@ public sealed class AuthenticationApiTests(PostgresApiFactory factory)
         await admin.PostAsJsonAsync($"/api/projects/{project.Id}/members", new { userId = collaboratorUser.Id });
         var stage = await admin.PostAsJsonAsync($"/api/projects/{project.Id}/stages", new { name = "Build" });
         var stageResponse = (await stage.Content.ReadFromJsonAsync<StageResponse>())!;
-        var taskResponse = await admin.PostAsJsonAsync($"/api/projects/{project.Id}/tasks", new { stageId = stageResponse.Id, title = "Authenticated task", priority = "Medium" });
+        var taskResponse = await admin.PostAsJsonAsync($"/api/projects/{project.Id}/tasks", new { stageId = stageResponse.Id, title = "Authenticated task", priority = "Medium", assigneeIds = new[] { collaboratorUser.Id } });
         var task = (await taskResponse.Content.ReadFromJsonAsync<TaskResponse>())!;
         using var collaborator = await factory.CreateAuthenticatedClientAsync(collaboratorUser.Email, PostgresApiFactory.DefaultPassword);
         using var outsider = await factory.CreateAuthenticatedClientAsync(outsiderUser.Email, PostgresApiFactory.DefaultPassword);
@@ -160,7 +160,7 @@ public sealed class AuthenticationApiTests(PostgresApiFactory factory)
     }
 
     [PostgresFact]
-    public async Task Request_cannot_impersonate_actor_and_deactivated_token_is_blocked()
+    public async Task Request_cannot_impersonate_actor_and_reactivation_cannot_restore_old_sessions()
     {
         await factory.ResetDatabaseAsync();
         using var admin = await factory.CreateAdminClientAsync();
@@ -168,11 +168,18 @@ public sealed class AuthenticationApiTests(PostgresApiFactory factory)
         using var collaborator = await factory.CreateAuthenticatedClientAsync(collaboratorUser.Email, PostgresApiFactory.DefaultPassword);
 
         var impersonation = await admin.PostAsJsonAsync("/api/projects", new { name = "Spoof", createdByUserId = Guid.NewGuid() });
-        await admin.PostAsync($"/api/users/{collaboratorUser.Id}/deactivate", null);
+        var deactivate = await admin.PostAsync($"/api/users/{collaboratorUser.Id}/deactivate", null);
         var deactivatedToken = await collaborator.GetAsync("/api/auth/me");
+        var reactivate = await admin.PostAsync($"/api/users/{collaboratorUser.Id}/activate", null);
+        var oldTokenAfterActivation = await collaborator.GetAsync("/api/auth/me");
+        using var newSession = await factory.CreateAuthenticatedClientAsync(collaboratorUser.Email, PostgresApiFactory.DefaultPassword);
 
         Assert.Equal(HttpStatusCode.BadRequest, impersonation.StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, deactivatedToken.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, deactivate.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, deactivatedToken.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, reactivate.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, oldTokenAfterActivation.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await newSession.GetAsync("/api/auth/me")).StatusCode);
     }
 
     private static async Task<ProjectCreatedResponse> CreateProjectAsync(HttpClient admin)

@@ -36,7 +36,7 @@ internal static class TaskBlockersEndpoints
     {
         var task = await db.Tasks.SingleOrDefaultAsync(task => task.Id == taskId, cancellationToken);
         if (task is null) return Problem("task-not-found", "No existe la tarea.", 404);
-        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, cancellationToken)) return Problem("task-forbidden", "No tienes acceso a esta tarea.", 403);
+        if (!await TaskAccess.CanWorkAsync(db, task, currentUser, cancellationToken)) return Problem("task-forbidden", "Debes estar asignado a esta tarea para gestionar sus bloqueos.", 403);
         var project = await db.Projects.SingleAsync(project => project.Id == task.ProjectId, cancellationToken);
         if (IsClosed(project)) return Problem("task-project-closed", "El proyecto está cerrado.", 409);
         if (request.Version is not > 0 || request.Version != task.Version) return Problem("task-version-conflict", "La tarea fue modificada.", 409);
@@ -45,7 +45,7 @@ internal static class TaskBlockersEndpoints
         var reporter = await db.Users.SingleOrDefaultAsync(user => user.Id == reporterId, cancellationToken);
         if (reporter is null) return Problem("user-not-found", "No existe el usuario.", 404);
         if (!reporter.IsActive) return Problem("task-blocker-user-inactive", "El usuario está inactivo.", 409);
-        if (!await db.ProjectMembers.AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == reporterId, cancellationToken)) return Problem("task-blocker-user-not-project-member", "El usuario no pertenece al proyecto.", 409);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, cancellationToken)) return Problem("task-blocker-user-not-project-member", "El usuario no pertenece al proyecto.", 409);
         try
         {
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -94,7 +94,7 @@ internal static class TaskBlockersEndpoints
         var resolver = await db.Users.SingleOrDefaultAsync(user => user.Id == resolverId, cancellationToken);
         if (resolver is null) return Problem("user-not-found", "No existe el usuario.", 404);
         if (!resolver.IsActive) return Problem("task-blocker-user-inactive", "El usuario está inactivo.", 409);
-        if (!await db.ProjectMembers.AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == resolverId, cancellationToken)) return Problem("task-blocker-user-not-project-member", "El usuario no pertenece al proyecto.", 409);
+        if (!await TaskAccess.CanWorkAsync(db, task, currentUser, cancellationToken)) return Problem("task-forbidden", "Debes estar asignado a esta tarea para gestionar sus bloqueos.", 403);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         try
         {

@@ -1,7 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading.RateLimiting;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Nakama.Api.Modules.Identity.Authentication;
@@ -14,7 +13,7 @@ public interface ILoginRateLimiter
 public sealed class LoginRateLimiter : ILoginRateLimiter, IDisposable
 {
     private const long MaxTrackedPartitions = 10_000;
-    private readonly MemoryCache partitions = new(new MemoryCacheOptions { SizeLimit = MaxTrackedPartitions });
+    private readonly MemoryCache partitions = new(new MemoryCacheOptions { SizeLimit = MaxTrackedPartitions, CompactionPercentage = 0 });
     private readonly object partitionsGate = new();
     private readonly int permitLimit;
     private readonly TimeSpan window;
@@ -27,26 +26,25 @@ public sealed class LoginRateLimiter : ILoginRateLimiter, IDisposable
 
     public bool TryAcquire(IPAddress? remoteIpAddress, string? email)
     {
-        FixedWindowRateLimiter limiter;
+        var key = PartitionKey(remoteIpAddress, email);
         lock (partitionsGate)
         {
-            limiter = partitions.GetOrCreate(PartitionKey(remoteIpAddress, email), entry =>
+            if (!partitions.TryGetValue<AttemptWindow>(key, out var attempts))
             {
-                entry.SetSize(1);
-                entry.SetSlidingExpiration(window + window);
-                entry.RegisterPostEvictionCallback(static (_, value, _, _) => ((FixedWindowRateLimiter)value!).Dispose());
-                return new FixedWindowRateLimiter(new FixedWindowRateLimiterOptions
+                attempts = new AttemptWindow();
+                partitions.Set(key, attempts, new MemoryCacheEntryOptions
                 {
-                    PermitLimit = permitLimit,
-                    Window = window,
-                    QueueLimit = 0,
-                    AutoReplenishment = true
+                    Size = 1,
+                    AbsoluteExpirationRelativeToNow = window
                 });
-            })!;
-        }
+                // If the bounded cache is full, fail closed for untracked identities.
+                if (!partitions.TryGetValue<AttemptWindow>(key, out attempts)) return false;
+            }
 
-        using var lease = limiter.AttemptAcquire();
-        return lease.IsAcquired;
+            if (attempts is null || attempts.Count >= permitLimit) return false;
+            attempts.Count++;
+            return true;
+        }
     }
 
     public void Dispose() => partitions.Dispose();
@@ -56,5 +54,10 @@ public sealed class LoginRateLimiter : ILoginRateLimiter, IDisposable
         var normalizedEmail = email?.Trim().ToLowerInvariant() ?? string.Empty;
         var value = $"{remoteIpAddress?.ToString() ?? "unknown"}\n{normalizedEmail}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+    }
+
+    private sealed class AttemptWindow
+    {
+        public int Count { get; set; }
     }
 }

@@ -36,6 +36,7 @@ internal static class TaskDependenciesEndpoints
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (task is null) return Problem("task-not-found", 404);
         if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return Problem("task-forbidden", 403);
+        if (!await TaskAccess.CanWorkAsync(db, task, currentUser, ct)) return Problem("task-forbidden", 403);
         if (!IsEditable(task)) return Problem("task-dependencies-read-only", 409);
         if (request.TaskVersion is not > 0 || request.TaskVersion != task.Version) return Problem("task-version-conflict", 409);
         if (request.DependsOnTaskId is not { } prerequisiteId || prerequisiteId == id) return Problem("task-dependency-self-reference", 409);
@@ -43,7 +44,7 @@ internal static class TaskDependenciesEndpoints
         if (prerequisite is null) return Problem("task-not-found", 404);
         if (prerequisite.ProjectId != task.ProjectId) return Problem("task-dependency-project-mismatch", 409);
         var userId = currentUser.UserId;
-        if (!await db.ProjectMembers.AnyAsync(x => x.ProjectId == task.ProjectId && x.UserId == userId, ct)) return Problem("task-dependency-user-not-project-member", 409);
+        if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return Problem("task-dependency-user-not-project-member", 409);
         if (await db.TaskDependencies.AnyAsync(x => x.TaskId == id && x.DependsOnTaskId == prerequisiteId, ct)) return Problem("task-dependency-already-exists", 409);
 
         var projectTaskIds = await db.Tasks.Where(x => x.ProjectId == task.ProjectId).Select(x => x.Id).ToListAsync(ct);
@@ -115,6 +116,7 @@ internal static class TaskDependenciesEndpoints
         var task = await db.Tasks.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (task is null) return Problem("task-not-found", 404);
         if (!await ProjectAccess.CanAccessAsync(db, task.ProjectId, currentUser, ct)) return Problem("task-forbidden", 403);
+        if (!await TaskAccess.CanWorkAsync(db, task, currentUser, ct)) return Problem("task-forbidden", 403);
         if (!IsEditable(task)) return Problem("task-dependencies-read-only", 409);
         if (request.TaskVersion is not > 0 || request.TaskVersion != task.Version) return Problem("task-version-conflict", 409);
         var dependency = await db.TaskDependencies.SingleOrDefaultAsync(x => x.Id == dependencyId && x.TaskId == id, ct);

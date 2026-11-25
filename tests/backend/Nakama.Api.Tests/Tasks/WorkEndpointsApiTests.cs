@@ -100,7 +100,7 @@ public sealed class WorkEndpointsApiTests(PostgresApiFactory factory)
         var user = await factory.CreateUserAsync(admin, "inactive-work@nakama.test");
         using var collaborator = await factory.CreateAuthenticatedClientAsync(user.Email, PostgresApiFactory.DefaultPassword);
         Assert.Equal(HttpStatusCode.NoContent, (await admin.PostAsync($"/api/users/{user.Id}/deactivate", null)).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await collaborator.GetAsync("/api/me/work")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await collaborator.GetAsync("/api/me/work")).StatusCode);
     }
 
     private static async Task<Setup> CreateSetup(HttpClient admin, Guid memberId, string projectName = "Work project", string stageName = "Work stage")

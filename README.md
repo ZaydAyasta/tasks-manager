@@ -56,8 +56,8 @@ Las autorizaciones se validan también en la API: un usuario no puede actuar com
 
    ```powershell
    cd src/frontend
-   Copy-Item .env.example .env
-   npm install
+   $env:VITE_API_BASE_URL = 'http://localhost:5000'
+   npm ci
    npm run dev
    ```
 
@@ -78,15 +78,15 @@ Para instalación y build reproducibles use Node 24.15.0 (definido en `src/front
 
 ```powershell
 cd src/frontend
-Copy-Item .env.example .env
-npm install
+$env:VITE_API_BASE_URL = 'http://localhost:5000'
+npm ci
 npm run dev
 ```
 
-`VITE_API_BASE_URL` configura la URL de la API; el ejemplo de localhost es exclusivamente para Development. Todo build de Production debe definir la URL HTTPS desplegada.
+`VITE_API_BASE_URL` configura la URL de la API. El ejemplo de localhost es para Development. Vite también lee los archivos `.env` de la raíz del repositorio. El build exige una URL HTTPS válida y detiene la compilación si falta o no cumple el formato.
 Inicie antes la API con las credenciales JWT y PostgreSQL indicadas más abajo. En desarrollo, la API acepta por CORS `http://localhost:5173`; puede modificar `Cors:AllowedOrigins` si usa otro origen.
 
-El login consume `POST /api/auth/login` y la restauración de sesión verifica siempre `GET /api/auth/me`. En Production la API entrega la sesión mediante una cookie `HttpOnly`; el frontend no persiste el access token. Las mutaciones autenticadas incluyen un token CSRF ligado a esa sesión.
+El login consume `POST /api/auth/login` y la restauración de sesión verifica siempre `GET /api/auth/me`. En Production la API entrega la sesión mediante una cookie `HttpOnly` y el frontend mantiene el estado de la sesión en memoria. Las mutaciones autenticadas incluyen un token CSRF ligado a esa sesión. Cerrar sesión revoca esa sesión en el servidor. Cambiar la contraseña o desactivar la cuenta invalida sus sesiones anteriores.
 
 Los Admin pueden configurar el trabajo desde **Proyectos**: crear un proyecto, definir sus etapas y equipo, y luego crear/organizar las tareas desde el tablero. Todas las mutaciones vuelven a consultar la API para respetar la concurrencia del backend.
 
@@ -136,6 +136,8 @@ dotnet run --project src/backend/Nakama.Api
 Use `POST /api/auth/login` with `{ "email": "...", "password": "..." }` and `GET /api/auth/me` to restore the authenticated session. In Production the browser receives an HttpOnly cookie and must send the `X-Nakama-Csrf` value returned by login or `/me` for authenticated mutations. User creation requires an Admin session and a password of at least eight characters.
 
 Las pruebas de integración usan exclusivamente `ConnectionStrings:NakamaTestDatabase`. La base debe ser dedicada: la suite la elimina y recrea antes de cada escenario, por lo que el usuario PostgreSQL necesita permisos para crear y eliminar esa base. No configure esa cadena con una base de desarrollo.
+
+El [workflow de CI](.github/workflows/ci.yml) compila la solución, ejecuta las pruebas con PostgreSQL temporal y verifica las pruebas y el build del frontend.
 
 Los actores de Projects, Tasks, Blockers, Subtasks, Dependencies, Comments y Activity se toman exclusivamente de la sesión autenticada; las solicitudes no aceptan `createdByUserId`, reporter IDs ni actor IDs. Los cambios concurrentes se protegen con `Version` y devuelven `409` cuando corresponde.
 

@@ -16,8 +16,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HostFiltering;
 using Microsoft.IdentityModel.Tokens;
 using Nakama.Api.Modules.Identity.Authentication;
+using Nakama.Api.Modules.Identity.Domain;
 using System.Text;
 using System.Text.Json.Serialization;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 var hostingPort = builder.Configuration["PORT"];
@@ -71,6 +73,23 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
         options.Events = new JwtBearerEvents
         {
+            OnTokenValidated = async context =>
+            {
+                var subject = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                var proof = context.Principal?.FindFirst(CsrfProtection.ClaimType)?.Value;
+                var version = context.Principal?.FindFirst("security_version")?.Value ?? "0";
+                if (!Guid.TryParse(subject, out var id) || string.IsNullOrEmpty(proof) || !int.TryParse(version, out var tokenVersion))
+                {
+                    context.Fail("Invalid session.");
+                    return;
+                }
+
+                var db = context.HttpContext.RequestServices.GetRequiredService<NakamaDbContext>();
+                var fingerprint = RevokedSession.FingerprintOf(proof);
+                var valid = await db.Users.AnyAsync(user => user.Id == id && user.SecurityVersion == tokenVersion
+                    && !db.RevokedSessions.Any(session => session.Fingerprint == fingerprint), context.HttpContext.RequestAborted);
+                if (!valid) context.Fail("Session revoked.");
+            },
             OnMessageReceived = context =>
             {
                 var cookieToken = context.Request.Cookies["nakama.access-token"];

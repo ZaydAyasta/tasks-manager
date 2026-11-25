@@ -10,6 +10,7 @@ namespace Nakama.Api.BuildingBlocks.Persistence;
 public sealed class NakamaDbContext(DbContextOptions<NakamaDbContext> options) : DbContext(options)
 {
     public DbSet<User> Users => Set<User>();
+    internal DbSet<RevokedSession> RevokedSessions => Set<RevokedSession>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<Stage> Stages => Set<Stage>();

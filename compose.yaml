@@ -34,11 +34,14 @@ services:
 
   nakama-web:
     build:
-      context: ./src/frontend
+      context: .
+      dockerfile: src/frontend/Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:?set VITE_API_BASE_URL in .env}
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:?set VITE_API_BASE_URL in .env}
     ports:
-      - "8081:80"
+      - "8081:8080"
 
 volumes:
   nakama-postgres:
