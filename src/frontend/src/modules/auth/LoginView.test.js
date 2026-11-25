@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
-const { login, replace } = vi.hoisted(() => ({
+const { login, replace, query } = vi.hoisted(() => ({
   login: vi.fn(),
-  replace: vi.fn()
+  replace: vi.fn(), query: {}
 }))
 
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ query: {} }),
+  useRoute: () => ({ query }),
   useRouter: () => ({ replace })
 }))
 
@@ -37,6 +37,20 @@ describe('login redirects', () => {
     await submit('Collaborator')
 
     expect(replace).toHaveBeenCalledWith('/my-work')
+  })
+
+  it('accepts internal redirect paths and uses the role landing for invalid destinations', async () => {
+    try {
+      query.redirect = '/projects?from=notification'
+      await submit('Admin')
+      expect(replace).toHaveBeenLastCalledWith('/projects?from=notification')
+
+      query.redirect = ['invalid destination']
+      await submit('Admin')
+      expect(replace).toHaveBeenLastCalledWith('/dashboard')
+    } finally {
+      delete query.redirect
+    }
   })
 
   it('shows a connection error when the API is unavailable', async () => {

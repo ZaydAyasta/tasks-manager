@@ -42,8 +42,8 @@ onMounted(load)
     <header class="page-header dashboard-header">
       <div>
         <p class="eyebrow">VISTA OPERATIVA</p>
-        <h1>Dashboard</h1>
-        <p>Resumen del trabajo actual y de lo que requiere atención.</p>
+        <h1>Resumen de trabajo</h1>
+        <p>Revisa cómo avanzan tus proyectos y qué tareas necesitan atención.</p>
       </div>
     </header>
 
@@ -81,7 +81,7 @@ onMounted(load)
               <p class="eyebrow">REQUIEREN ATENCIÓN</p>
               <h2>Trabajo crítico y bloqueos</h2>
             </div>
-            <span class="attention-count">{{ dashboard.attention.length }} elementos</span>
+            <span class="attention-count">{{ dashboard.attention.length }} tareas</span>
           </header>
           <p v-if="!dashboard.attention.length" class="inline-empty">No hay tareas que requieran atención ahora.</p>
           <div v-else class="dashboard-attention-list">

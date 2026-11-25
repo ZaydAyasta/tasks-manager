@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import Badges from '../../../shared/components/Badges.vue'
 
 const props = defineProps({
   project: { type: Object, required: true }
@@ -15,13 +16,13 @@ const progress = computed(() => {
   <RouterLink :to="`/projects/${project.id}`" class="dashboard-project-card">
     <header>
       <div>
-        <span class="badge" :class="project.status.toLowerCase()">{{ project.status }}</span>
+        <Badges :value="project.status" type="project" />
         <h3>{{ project.name }}</h3>
       </div>
       <strong>{{ progress }}%</strong>
     </header>
 
-    <div class="project-progress" role="progressbar" :aria-valuenow="progress" aria-valuemin="0" aria-valuemax="100">
+    <div class="project-progress" role="progressbar" aria-label="Progreso del proyecto" :aria-valuenow="progress" aria-valuemin="0" aria-valuemax="100">
       <span :style="{ width: `${progress}%` }"></span>
     </div>
     <p class="project-progress-copy">{{ project.taskProgress.completed }} de {{ project.taskProgress.total }} tareas completadas</p>

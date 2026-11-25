@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import AppLayout from './AppLayout.vue'
 
-vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }), useRoute: () => ({ meta: {} }) }))
 vi.mock('../../modules/notifications/notifications.service', () => ({
   notificationsService: { unreadCount: vi.fn().mockResolvedValue({ count: 0 }) }
 }))
@@ -50,13 +50,13 @@ describe('AppLayout notification badge', () => {
     expect(wrapper.get('.nav-notification-badge').text()).toBe('9+')
   })
 
-  it('shows Dashboard only to Admin users', async () => {
+  it('shows the overview only to Admin users', async () => {
     const collaborator = mountLayout({ fullName: 'Collaborator', role: 'Collaborator' })
     await flushPromises()
-    expect(collaborator.text()).not.toContain('Dashboard')
+    expect(collaborator.text()).not.toContain('Resumen')
 
     const admin = mountLayout({ fullName: 'Admin', role: 'Admin' })
     await flushPromises()
-    expect(admin.text()).toContain('Dashboard')
+    expect(admin.text()).toContain('Resumen')
   })
 })

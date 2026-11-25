@@ -15,6 +15,7 @@ internal static class UserAdministration
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         // Serialize changes to active administrators so concurrent requests cannot remove the last one.
         var admins = await db.Users.FromSqlRaw("SELECT * FROM users WHERE role = 'Admin' AND is_active ORDER BY id FOR UPDATE").ToListAsync(ct);
+        if (!admins.Any(admin => admin.Id == actor.UserId)) return Results.Forbid();
         var user = await db.Users.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (user is null) return IdentityEndpointHelpers.NotFoundProblem(id);
         if (user.IsActive && user.Role == UserRole.Admin && (deactivate || role == UserRole.Collaborator) && admins.Count <= 1)

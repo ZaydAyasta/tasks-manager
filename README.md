@@ -15,7 +15,7 @@ Centraliza el ciclo de trabajo de un proyecto: desde crear su estructura y asign
 - Comentarios, adjuntos privados y registro de actividad inmutable por proyecto y tarea.
 - Notificaciones dentro de la aplicación y preferencias por tipo de evento.
 - Dashboard administrativo para identificar proyectos, tareas prioritarias, bloqueos y trabajo en revisión.
-- Vista **Mi trabajo** para que cada colaborador vea sólo sus tareas activas.
+- Vista **Mi trabajo** que abre con las tareas activas asignadas y permite consultar otras mediante filtros.
 
 ## Roles
 
@@ -44,6 +44,20 @@ Las autorizaciones se validan también en la API: un usuario no puede actuar com
 | Seguridad | JWT, cookie HttpOnly en Production y CSRF | Protección de sesión y mutaciones autenticadas. |
 
 ## Inicio rápido local
+
+Para evaluar Nakama con un proyecto y tres cuentas sintéticas, usa PowerShell 7, .NET 10 con `dotnet-ef`, Node y PostgreSQL local. Inicia la demostración en dos terminales desde la raíz:
+
+```powershell
+.\scripts\Start-NakamaLocalDemo.ps1 Api
+```
+
+```powershell
+.\scripts\Start-NakamaLocalDemo.ps1 Frontend
+```
+
+Abre `http://localhost:5511`. La terminal de la API indica dónde quedaron las credenciales generadas para Ana (administradora), Diego (colaborador) y Lucía (sin acceso al proyecto de muestra). El script usa `ConnectionStrings__NakamaDemoDatabase` o una conexión PostgreSQL local de los secretos de desarrollo y crea una base dedicada. Para recorrer las tareas y el historial, usa la [guía del piloto](docs/operations/pilot-smoke-test.md).
+
+### Desarrollo sin los datos de demostración
 
 1. Configura PostgreSQL, JWT y el primer administrador siguiendo [Configuración local](#configuración-local) y [Autenticación en Development](#authentication-development-setup).
 2. Inicia la API en `http://localhost:5000`:

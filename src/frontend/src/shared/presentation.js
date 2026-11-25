@@ -1,4 +1,6 @@
 export const roleLabel = role => ({ Admin: 'Administrador', Collaborator: 'Colaborador', Owner: 'Responsable del proyecto', Member: 'Miembro', Responsible: 'Responsable' }[role] || role)
+const calendarFormatter = new Intl.DateTimeFormat('es-PE', { dateStyle: 'medium', timeZone: 'UTC' })
+export const calendarDate = date => date ? calendarFormatter.format(new Date(`${date}T00:00:00Z`)) : ''
 export const blockerLabels = { Dependency: 'Dependencia', Information: 'Información', Approval: 'Aprobación', TechnicalIssue: 'Problema técnico', External: 'Externo', Other: 'Otro' }
 export const activityLabels = {
   ProjectCreated: 'creó el proyecto', ProjectUpdated: 'editó el proyecto', ProjectPaused: 'pausó el proyecto', ProjectResumed: 'reanudó el proyecto', ProjectCompleted: 'completó el proyecto', ProjectCancelled: 'canceló el proyecto', ProjectMemberAdded: 'añadió una persona al proyecto', ProjectMemberRemoved: 'quitó una persona del proyecto',

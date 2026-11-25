@@ -1,9 +1,10 @@
 # Nakama interface patterns
 
-- Direction: calm, dense B2B project control. The focal point is the current project or task, while management actions stay grouped at the edge.
-- Tokens: `--blue` is the primary action, `--yellow` remains the identity accent, status colours convey state only, and white paper surfaces sit over `--canvas`.
-- Depth: soft 1px borders and restrained elevation on hover; no heavy panels or gradients for management controls.
-- Spacing: 4px grid; 14px task-card padding, 16–22px configuration panels, 48px desktop page padding.
-- Navigation: left sidebar for product context; local underlined tabs for Board, Members and Configuration.
+- Direction mirrors the Nakama attendance system. The current project or task is the main focus, with familiar navigation and plain Spanish controls.
+- Tokens use navy for primary actions, yellow for orientation and selected navigation, and white surfaces over a cool canvas. Status colors convey state.
+- Depth uses soft 1px borders and restrained elevation. The login uses the same navy two-panel composition as the attendance system.
+- Spacing follows a 4px grid. Primary controls are at least 44px tall.
+- Navigation uses a navy desktop sidebar, a white top bar, and a native dialog for the mobile menu. Project controls link to Tablero, Equipo, Configurar etapas and Historial.
+- Motion uses short opacity and transform changes for page, dialog, and feedback entry. Respect reduced-motion settings.
 - Components: native `dialog` BaseModal; compact form fields; member selectors always expose name and email rather than IDs; action buttons disable during requests.
 - Concurrency: structural updates refresh from the backend. A 409 shows a human message and reloads rather than overwriting server state.

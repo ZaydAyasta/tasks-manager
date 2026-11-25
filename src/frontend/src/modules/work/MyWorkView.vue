@@ -49,7 +49,7 @@ onMounted(async () => {
 <template>
   <section class="page">
     <header class="page-header">
-      <div><p class="eyebrow">FOCO PERSONAL</p><h1>Mi trabajo</h1><p>Prioriza lo bloqueado y continúa con tu siguiente tarea.</p></div>
+      <div><h1>Mi trabajo</h1><p>Abre una tarea asignada para iniciarla, registrar avances o enviarla a revisión.</p></div>
       <div v-if="!loading && items.length" class="work-summary"><span><b>{{ summary.blocked }}</b> bloqueadas</span><span><b>{{ summary.progress }}</b> en progreso</span><span><b>{{ summary.pending }}</b> pendientes</span></div>
     </header>
     <search aria-label="Filtrar tareas">

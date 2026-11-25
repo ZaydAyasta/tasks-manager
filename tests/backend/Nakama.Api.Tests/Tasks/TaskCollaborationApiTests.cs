@@ -82,6 +82,9 @@ public sealed class TaskCollaborationApiTests(PostgresApiFactory factory)
         using var wrongFormat = Form("nota.pdf", "application/pdf", "Plain text example");
         var rejected = await client.PostAsync($"/api/tasks/{setup.Task.Id}/attachments", wrongFormat);
         Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        using var longName = Form(new string('a', 257) + ".txt", "text/plain", "Test content");
+        var invalidName = await client.PostAsync($"/api/tasks/{setup.Task.Id}/attachments", longName);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidName.StatusCode);
         Assert.Empty((await client.GetFromJsonAsync<List<TaskAttachmentResponse>>($"/api/tasks/{setup.Task.Id}/attachments"))!);
         using var upload = Form("../../nota.txt", "text/plain", "safe content"); var response = await client.PostAsync($"/api/tasks/{setup.Task.Id}/attachments", upload); Assert.Equal(HttpStatusCode.Created, response.StatusCode); var attachment = (await response.Content.ReadFromJsonAsync<TaskAttachmentResponse>())!; Assert.Equal("nota.txt", attachment.FileName); Assert.Equal(uploader.Id, attachment.UploadedBy.Id);
         Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync($"/api/tasks/{setup.Task.Id}/attachments/{attachment.Id}/download")).StatusCode); var download = await client.GetAsync($"/api/tasks/{setup.Task.Id}/attachments/{attachment.Id}/download"); Assert.Equal(HttpStatusCode.OK, download.StatusCode); Assert.Equal("safe content", await download.Content.ReadAsStringAsync()); Assert.Equal(HttpStatusCode.Forbidden, (await other.DeleteAsync($"/api/tasks/{setup.Task.Id}/attachments/{attachment.Id}")).StatusCode);

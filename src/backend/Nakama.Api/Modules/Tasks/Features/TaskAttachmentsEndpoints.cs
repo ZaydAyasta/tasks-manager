@@ -47,8 +47,10 @@ internal static class TaskAttachmentsEndpoints
         if (file is null || file.Length <= 0) return Problem("attachment-file-empty", "Selecciona un archivo con contenido.", 400);
         if (file.Length > options.Value.MaxFileSizeBytes) return Problem("attachment-file-too-large", "El archivo supera el tamaño máximo permitido.", 400);
         var original = Path.GetFileName(file.FileName.Replace('\\', '/'));
+        if (string.IsNullOrWhiteSpace(original) || original.Length > 260 || original.Any(char.IsControl))
+            return Problem("attachment-file-name-invalid", "El nombre del archivo debe tener entre 1 y 260 caracteres válidos.", 400);
         var extension = Path.GetExtension(original).ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(original) || !Allowed.TryGetValue(file.ContentType, out var extensions) || !extensions.Contains(extension))
+        if (!Allowed.TryGetValue(file.ContentType, out var extensions) || !extensions.Contains(extension))
             return Problem("attachment-file-type-not-allowed", "Este tipo de archivo no está permitido.", 400);
 
         var stored = $"{Guid.NewGuid():N}{extension}";

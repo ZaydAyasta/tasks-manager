@@ -67,6 +67,8 @@ La validación final del 2026-09-06 pasó compilación backend Release sin adver
 - En Edge de escritorio y con viewport móvil se verificaron altas, cambio y restablecimiento de contraseñas, permisos por rol y pertenencia, dependencias, subtareas, bloqueos, comentarios, adjuntos, revisión, cancelación y cierre de sesión. Se restauró una copia de PostgreSQL y de los adjuntos de prueba en rutas aisladas y se confirmó el mismo SHA-256 al descargar un archivo mediante la API restaurada.
 - El candidato se probó con datos sintéticos en localhost. Siguen pendientes la ejecución de las imágenes Docker y la aceptación en un entorno publicado.
 
+La revisión de interfaz posterior adoptó el diseño del sistema de asistencia, agregó el historial del proyecto y dejó un [inicio de demostración con tres cuentas](../../README.md#inicio-rápido-local). Se verificaron en Edge escritorio y móvil, incluidos navegación por teclado, retorno de foco del menú y movimiento reducido. La suite pasó con 139 pruebas de backend y 65 de frontend.
+
 ## Deferred features
 
 Quedan fuera del MVP, como backlog y no como defectos: Search, Reporting, Workspaces/organizations, email notifications, reminders, realtime y exports. Cualquier incorporación de esta lista requiere una nueva planificación de release y no forma parte de la estabilización de RC1.

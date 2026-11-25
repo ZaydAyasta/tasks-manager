@@ -13,21 +13,21 @@ import UsersView from '../../modules/users/UsersView.vue'
 import AccountView from '../../modules/auth/AccountView.vue'
 
 export const routes = [
-  { path: '/login', component: LoginView, meta: { guest: true } },
+  { path: '/login', component: LoginView, meta: { guest: true, title: 'Iniciar sesión' } },
   {
     path: '/',
     component: AppLayout,
     meta: { requiresAuth: true },
     children: [
-    { path: 'users', component: UsersView, meta: { requiresAuth: true, roles: ['Admin'] } },
-    { path: 'account', component: AccountView, meta: { requiresAuth: true } },
-    { path: 'dashboard', component: DashboardView, meta: { requiresAuth: true, roles: ['Admin'] } },
-    { path: 'projects', component: ProjectsView, meta: { requiresAuth: true } },
-    { path: 'projects/:projectId', component: ProjectBoardView, props: true, meta: { requiresAuth: true } },
-    { path: 'tasks/:taskId', component: TaskDetailView, props: true, meta: { requiresAuth: true } },
-    { path: 'my-work', component: MyWorkView, meta: { requiresAuth: true } },
-    { path: 'notifications', component: NotificationsView, meta: { requiresAuth: true } },
-    { path: '403', component: BasicStateView, props: { kind: 'forbidden' } }
+      { path: 'users', component: UsersView, meta: { requiresAuth: true, roles: ['Admin'], title: 'Usuarios' } },
+      { path: 'account', component: AccountView, meta: { requiresAuth: true, title: 'Mi cuenta' } },
+      { path: 'dashboard', component: DashboardView, meta: { requiresAuth: true, roles: ['Admin'], title: 'Resumen' } },
+      { path: 'projects', component: ProjectsView, meta: { requiresAuth: true, title: 'Proyectos' } },
+      { path: 'projects/:projectId', component: ProjectBoardView, props: true, meta: { requiresAuth: true, title: 'Tablero del proyecto' } },
+      { path: 'tasks/:taskId', component: TaskDetailView, props: true, meta: { requiresAuth: true, title: 'Detalle de la tarea' } },
+      { path: 'my-work', component: MyWorkView, meta: { requiresAuth: true, title: 'Mi trabajo' } },
+      { path: 'notifications', component: NotificationsView, meta: { requiresAuth: true, title: 'Notificaciones' } },
+      { path: '403', component: BasicStateView, props: { kind: 'forbidden' }, meta: { title: 'Acceso restringido' } }
     ]
   },
   { path: '/:pathMatch(.*)*', component: BasicStateView, props: { kind: 'notFound' } }
@@ -53,4 +53,5 @@ export const restoreSessionOrRedirect = async (to, auth) => {
 }
 const router = createRouter({ history: createWebHistory(), routes })
 router.beforeEach(to => restoreSessionOrRedirect(to, useAuthStore()))
+router.afterEach(to => { document.title = to.meta.title ? `${to.meta.title} | Nakama` : 'Nakama' })
 export default router
