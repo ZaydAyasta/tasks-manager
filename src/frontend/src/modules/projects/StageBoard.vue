@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import TaskCard from '../../shared/components/TaskCard.vue'
 
 const props = defineProps({
@@ -14,7 +14,7 @@ const props = defineProps({
 const emit = defineEmits(['add-stage', 'edit-stage', 'toggle-stage', 'add-task', 'reorder'])
 const board = ref(null)
 const grabbedStage = ref(null)
-const dropTarget = ref(null)
+const dragPreview = shallowRef(null)
 const cancellation = ref('')
 const canReorder = computed(() => props.canManage && props.editable && props.stages.length > 1)
 const tasksByStage = computed(() => {
@@ -44,7 +44,7 @@ function startDrag(event, index) {
   handle.setPointerCapture(event.pointerId)
   drag = {
     pointerId: event.pointerId, handle, column, index,
-    siblings: items.filter(item => item !== column), lastColumn: items.at(-1),
+    items, siblings: items.filter(item => item !== column),
     startX: event.clientX, startScroll: board.value.scrollLeft, x: event.clientX, time: null, target: index,
     pickupOffset: 0
   }
@@ -76,18 +76,41 @@ function updateTarget() {
   const { siblings } = drag
   const next = siblings.findIndex(column => x < column.offsetLeft + column.offsetWidth / 2)
   drag.target = next === -1 ? siblings.length : next
-  dropTarget.value = drag.target === drag.index ? null : drag.target
-  if (drag.target === drag.index) return
+  if (drag.target === drag.index) {
+    dragPreview.value = null
+    return
+  }
 
-  const before = siblings[drag.target - 1]
-  const after = siblings[drag.target]
-  const previousEdge = before ? before.offsetLeft + before.offsetWidth : after.offsetLeft - 12
-  const nextEdge = after ? after.offsetLeft : previousEdge + 12
-  const marker = (previousEdge + nextEdge) / 2
+  const marker = previewDrop()
   const visibleStart = list.scrollLeft
   const visibleEnd = visibleStart + list.clientWidth
   list.style.setProperty('--stage-drop-x', `${Math.max(visibleStart + 4, Math.min(visibleEnd - 4, marker))}px`)
   list.style.setProperty('--stage-drop-label-x', `${Math.max(visibleStart + 62, Math.min(visibleEnd - 62, marker))}px`)
+}
+
+function previewDrop() {
+  const { target, index: origin, items } = drag
+  const towardOrigin = Math.sign(origin - target)
+  const destination = items[target]
+  const nudge = (items[target + towardOrigin].offsetLeft - destination.offsetLeft) * 0.42
+
+  if (dragPreview.value?.target !== target || dragPreview.value.nudge !== nudge) {
+    const offsets = new Map()
+    for (let index = target; index !== origin; index += towardOrigin) {
+      const column = items[index]
+      const offset = index === target ? nudge : items[index + towardOrigin].offsetLeft - column.offsetLeft
+      offsets.set(column.dataset.stageId, `${offset}px`)
+    }
+    dragPreview.value = { target, nudge, offsets, coversOrigin: Math.abs(origin - target) > 1 }
+  }
+
+  const outside = items[target - towardOrigin]
+  const goingLeft = towardOrigin > 0
+  const destinationEdge = destination.offsetLeft + (goingLeft ? 0 : destination.offsetWidth)
+  const outsideEdge = outside
+    ? outside.offsetLeft + (goingLeft ? outside.offsetWidth : 0)
+    : destinationEdge - towardOrigin * 12
+  return (outsideEdge + destinationEdge + nudge) / 2
 }
 
 function animateDrag(time) {
@@ -99,7 +122,7 @@ function animateDrag(time) {
   const velocity = Math.max(-1, Math.min(1, (intoRight - intoLeft) / edge))
   const elapsed = drag.time === null ? 16 : Math.min(32, time - drag.time)
   drag.time = time
-  const { lastColumn } = drag
+  const lastColumn = drag.items.at(-1)
   // Limit auto-scroll to the real columns even if the lifted column paints beyond them.
   const contentEnd = lastColumn.offsetLeft + lastColumn.offsetWidth + 16
   const maxScroll = Math.max(0, contentEnd - list.clientWidth)
@@ -128,17 +151,17 @@ function cancelSettle(column) {
   column.getAnimations?.().find(animation => animation.id === settleAnimationId)?.cancel()
 }
 
-async function settleStage({ stageId, button }, animateSiblings = false) {
+async function settleStage({ stageId, button }) {
   const list = board.value
   const items = columns()
   const moving = items.find(column => column.dataset.stageId === stageId)
   const canAnimate = typeof moving?.animate === 'function' && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  const previous = canAnimate
-    ? (animateSiblings ? items : [moving]).map(column => [column, column.getBoundingClientRect()])
-    : []
+  // Exclude the temporary rotation from the starting rects, keeping the horizontal preview.
+  list.classList.remove('stage-board-grabbing')
+  const previous = canAnimate ? items.map(column => [column, column.getBoundingClientRect()]) : []
   const scrollBefore = list.scrollLeft
   grabbedStage.value = null
-  dropTarget.value = null
+  dragPreview.value = null
   moving?.style.removeProperty('--stage-drag-x')
   await nextTick()
   if (board.value !== list || !moving?.isConnected) return
@@ -213,7 +236,7 @@ watch(() => props.stages.map(stage => stage.id).join(','), () => {
   const move = pendingMove
   pendingMove = null
   // Capture the released position before Vue patches the saved order into the board.
-  settleStage(move, true)
+  settleStage(move)
 })
 
 watch(() => props.busy, value => {
@@ -242,14 +265,15 @@ onBeforeUnmount(releasePointer)
       <button v-if="canManage && editable" type="button" class="button primary" @click="emit('add-stage')">Crear primera etapa</button>
     </div>
     <div v-else ref="board" class="board stage-board"
-      :class="{ 'stage-board-reorderable': canReorder, 'stage-board-grabbing': grabbedStage && !busy }"
+      :class="{ 'stage-board-reorderable': canReorder, 'stage-board-previewing': grabbedStage, 'stage-board-grabbing': grabbedStage && !busy }"
       @pointermove="moveDrag" @pointerup="endDrag" @pointercancel="cancelDrag" @lostpointercapture="cancelDrag">
-      <div v-if="grabbedStage" class="stage-source-slot" aria-hidden="true">Origen</div>
-      <div v-if="dropTarget !== null" class="stage-drop-marker" aria-hidden="true">
-        <span>Posición {{ dropTarget + 1 }}</span>
+      <div v-if="grabbedStage && !dragPreview?.coversOrigin" class="stage-source-slot" aria-hidden="true">Origen</div>
+      <div v-if="dragPreview" class="stage-drop-marker" aria-hidden="true">
+        <span>Posición {{ dragPreview.target + 1 }}</span>
       </div>
       <section v-for="(stage, index) in stages" :key="stage.id" :data-stage-id="stage.id" class="board-column"
-        :class="{ inactive: !stage.isActive, 'stage-board-grabbed': grabbedStage === stage.id }">
+        :class="{ inactive: !stage.isActive, 'stage-board-grabbed': grabbedStage === stage.id }"
+        :style="{ '--stage-preview-x': dragPreview?.offsets.get(stage.id) }">
         <header>
           <div>
             <span v-if="canReorder" class="stage-drag-handle" :class="{ 'stage-drag-unavailable': busy }" aria-hidden="true"

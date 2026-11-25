@@ -120,6 +120,7 @@
 .stage-move:hover { box-shadow: inset 0 0 0 1px var(--blue); }
 .stage-drag-handle.stage-drag-unavailable, .stage-move[aria-disabled="true"] { cursor: default; opacity: .55; }
 .stage-board.stage-board-grabbing, .stage-board.stage-board-grabbing * { cursor: grabbing; }
+.stage-board-previewing > .board-column:not(.stage-board-grabbed) { translate: var(--stage-preview-x, none); }
 .stage-board .stage-board-grabbed {
   position: relative; z-index: 2; pointer-events: none; opacity: 1;
   translate: var(--stage-drag-x, 0px) var(--stage-lift, 0px);
@@ -152,16 +153,17 @@
   background: var(--yellow); box-shadow: 0 0 0 1px var(--blue);
 }
 @media (prefers-reduced-motion: no-preference) {
+  .stage-board-previewing > .board-column:not(.stage-board-grabbed) { transition: translate 185ms var(--motion-out); }
   .stage-board-grabbing > .board-column:not(.stage-board-grabbed) {
     transform-origin: center;
-    animation: stage-wiggle 480ms ease-in-out infinite;
+    animation: stage-wiggle 290ms ease-in-out infinite;
   }
-  .stage-board-grabbing > .board-column:nth-of-type(even):not(.stage-board-grabbed) { animation-delay: -240ms; }
+  .stage-board-grabbing > .board-column:nth-of-type(even):not(.stage-board-grabbed) { animation-delay: -145ms; }
   .stage-board .stage-board-grabbed { --stage-lift: -3px; scale: 1.015; animation: stage-pickup 160ms var(--motion-out); }
   .stage-drop-marker span { animation: stage-marker-in 150ms var(--motion-out); }
   @keyframes stage-wiggle {
-    25% { rotate: -.75deg; }
-    75% { rotate: .75deg; }
+    22% { rotate: -.85deg; }
+    70% { rotate: .95deg; }
   }
   @keyframes stage-pickup { from { scale: 1; } }
   @keyframes stage-marker-in { from { opacity: 0; transform: translateY(3px); } }
