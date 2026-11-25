@@ -152,8 +152,17 @@
   background: var(--yellow); box-shadow: 0 0 0 1px var(--blue);
 }
 @media (prefers-reduced-motion: no-preference) {
+  .stage-board-grabbing > .board-column:not(.stage-board-grabbed) {
+    transform-origin: center;
+    animation: stage-wiggle 480ms ease-in-out infinite;
+  }
+  .stage-board-grabbing > .board-column:nth-of-type(even):not(.stage-board-grabbed) { animation-delay: -240ms; }
   .stage-board .stage-board-grabbed { --stage-lift: -3px; scale: 1.015; animation: stage-pickup 160ms var(--motion-out); }
   .stage-drop-marker span { animation: stage-marker-in 150ms var(--motion-out); }
+  @keyframes stage-wiggle {
+    25% { rotate: -.75deg; }
+    75% { rotate: .75deg; }
+  }
   @keyframes stage-pickup { from { scale: 1; } }
   @keyframes stage-marker-in { from { opacity: 0; transform: translateY(3px); } }
 }
